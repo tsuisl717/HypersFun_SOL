@@ -478,3 +478,154 @@ export async function prepareCreateVaultAccounts(
     },
   };
 }
+
+// ─── Instruction: buy (USDC → vault token) ───────────────────────────────────
+//
+// Mirrors the EVM `buy(uint256 usdcAmount, uint256 minTokensOut)` flow.
+// If the deployed program uses a different snake-case name (e.g. `deposit`),
+// change the discriminator string below.
+export interface BuyAccounts {
+  user: PublicKey;
+  vaultState: PublicKey;
+  vaultMint: PublicKey;
+  usdcVault: PublicKey;          // vault's USDC ATA (PDA-owned)
+  userUsdcAccount: PublicKey;    // user's USDC ATA
+  userVaultAccount: PublicKey;   // user's vault-token ATA
+  factoryState: PublicKey;
+  treasuryUsdcAccount: PublicKey; // factory.treasury's USDC ATA (for trading fee)
+  usdcMint: PublicKey;
+}
+
+export function buildBuyIx(
+  accounts: BuyAccounts,
+  usdcAmount: bigint | number,    // u64, 6-dec USDC
+  minTokensOut: bigint | number = 0n, // u64
+): TransactionInstruction {
+  const data = Buffer.concat([
+    disc('buy'),
+    enc_u64_le(usdcAmount),
+    enc_u64_le(minTokensOut),
+  ]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: accounts.user,                isSigner: true,  isWritable: true  },
+      { pubkey: accounts.vaultState,          isSigner: false, isWritable: true  },
+      { pubkey: accounts.vaultMint,           isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcVault,           isSigner: false, isWritable: true  },
+      { pubkey: accounts.userUsdcAccount,     isSigner: false, isWritable: true  },
+      { pubkey: accounts.userVaultAccount,    isSigner: false, isWritable: true  },
+      { pubkey: accounts.factoryState,        isSigner: false, isWritable: false },
+      { pubkey: accounts.treasuryUsdcAccount, isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcMint,            isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,  isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,      isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+// ─── Instruction: sell (vault token → USDC) ──────────────────────────────────
+export interface SellAccounts extends BuyAccounts {}
+
+export function buildSellIx(
+  accounts: SellAccounts,
+  tokenAmount: bigint | number,   // u64, 9-dec vault token
+  minUsdcOut: bigint | number = 0n, // u64
+): TransactionInstruction {
+  const data = Buffer.concat([
+    disc('sell'),
+    enc_u64_le(tokenAmount),
+    enc_u64_le(minUsdcOut),
+  ]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: accounts.user,                isSigner: true,  isWritable: true  },
+      { pubkey: accounts.vaultState,          isSigner: false, isWritable: true  },
+      { pubkey: accounts.vaultMint,           isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcVault,           isSigner: false, isWritable: true  },
+      { pubkey: accounts.userUsdcAccount,     isSigner: false, isWritable: true  },
+      { pubkey: accounts.userVaultAccount,    isSigner: false, isWritable: true  },
+      { pubkey: accounts.factoryState,        isSigner: false, isWritable: false },
+      { pubkey: accounts.treasuryUsdcAccount, isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcMint,            isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,  isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId,      isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+// ─── Instruction: set_paused (admin only) ────────────────────────────────────
+export function buildSetPausedIx(
+  admin: PublicKey,
+  vaultState: PublicKey,
+  paused: boolean,
+): TransactionInstruction {
+  const data = Buffer.concat([
+    disc('set_paused'),
+    Buffer.from([paused ? 1 : 0]),
+  ]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: admin,      isSigner: true,  isWritable: false },
+      { pubkey: vaultState, isSigner: false, isWritable: true  },
+    ],
+    data,
+  });
+}
+
+// ─── Instruction: set_verified (factory authority only) ──────────────────────
+export function buildSetVerifiedIx(
+  authority: PublicKey,
+  factoryState: PublicKey,
+  vaultState: PublicKey,
+  verified: boolean,
+): TransactionInstruction {
+  const data = Buffer.concat([
+    disc('set_verified'),
+    Buffer.from([verified ? 1 : 0]),
+  ]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: authority,    isSigner: true,  isWritable: false },
+      { pubkey: factoryState, isSigner: false, isWritable: false },
+      { pubkey: vaultState,   isSigner: false, isWritable: true  },
+    ],
+    data,
+  });
+}
+
+// ─── Helper: prepare buy/sell accounts for a given user + vault ──────────────
+export async function prepareTradeAccounts(
+  connection: Connection,
+  vaultState: PublicKey,
+  user: PublicKey,
+): Promise<BuyAccounts> {
+  const factory = await fetchFactoryState(connection);
+  if (!factory) throw new Error('Factory not initialized.');
+
+  const [factoryPda] = findFactoryPda();
+  const [vaultMintPda] = findVaultMintPda(vaultState);
+  const usdcVault          = await getAssociatedTokenAddress(factory.usdcMint, vaultState, true);
+  const userUsdcAccount    = await getAssociatedTokenAddress(factory.usdcMint, user);
+  const userVaultAccount   = await getAssociatedTokenAddress(vaultMintPda, user);
+  const treasuryUsdcAccount = await getAssociatedTokenAddress(factory.usdcMint, factory.treasury);
+
+  return {
+    user,
+    vaultState,
+    vaultMint: vaultMintPda,
+    usdcVault,
+    userUsdcAccount,
+    userVaultAccount,
+    factoryState: factoryPda,
+    treasuryUsdcAccount,
+    usdcMint: factory.usdcMint,
+  };
+}
