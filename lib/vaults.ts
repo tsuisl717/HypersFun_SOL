@@ -16,6 +16,12 @@ export interface VaultPosition {
   isLong: boolean;
 }
 
+export interface VaultLinks {
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+}
+
 export interface VaultInfo {
   core: string;          // Solana program account pubkey
   trading: string;       // Solana trading wallet pubkey
@@ -30,6 +36,8 @@ export interface VaultInfo {
   buyPrice: string;
   metadataURI: string;
   imageUrl: string;
+  description: string;
+  links: VaultLinks;
   totalVolume: string;
   tvl: string;
   priceChange24h: number;
@@ -71,6 +79,21 @@ function setCachedVaults(data: VaultInfo[]): void {
   }
 }
 
+function updateCachedVault(coreAddress: string, updates: Partial<VaultInfo>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const cached = sessionStorage.getItem(VAULTS_CACHE_KEY);
+    if (!cached) return;
+    const parsed: VaultsCache = JSON.parse(cached);
+    const idx = parsed.data.findIndex(v => v.core === coreAddress);
+    if (idx === -1) return;
+    parsed.data[idx] = { ...parsed.data[idx], ...updates };
+    sessionStorage.setItem(VAULTS_CACHE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
+}
+
 // ─── On-chain → UI converter ─────────────────────────────────────────────────
 
 const PRECISION = 1_000_000_000n; // matches contract's 9-dec internal precision
@@ -107,6 +130,8 @@ async function toVaultInfo(v: VaultStateData): Promise<VaultInfo> {
     buyPrice:           navStr,
     metadataURI:        v.metadataUri,
     imageUrl:           '',
+    description:        '',
+    links:              {},
     totalVolume:        (Number(v.totalVolume) / Number(PRECISION)).toFixed(2),
     tvl:                tvlUsdc.toFixed(2),
     priceChange24h:     0,                   // TODO: derive from TWAP history
@@ -120,17 +145,75 @@ async function toVaultInfo(v: VaultStateData): Promise<VaultInfo> {
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export async function loadVaults(
-  _onUpdate?: VaultUpdateCallback,
+  onUpdate?: VaultUpdateCallback,
   forceRefresh?: boolean,
 ): Promise<VaultInfo[]> {
   if (!forceRefresh) {
     const cached = getCachedVaults();
-    if (cached) return cached;
+    if (cached) {
+      console.log('[loadVaults] cache hit:', cached);
+      return cached;
+    }
   }
+  console.log('[loadVaults] fetching from', SOLANA_CONFIG.rpcUrl);
   const onChain = await loadOnChainVaults(connection);
-  const vaults  = await Promise.all(onChain.map(toVaultInfo));
+  console.log(`[loadVaults] on-chain VaultStateData (${onChain.length}):`,
+    onChain.map(v => ({
+      pubkey:        v.pubkey.toBase58(),
+      vaultId:       v.vaultId.toString(),
+      name:          v.name,
+      symbol:        v.symbol,
+      leader:        v.leader.toBase58(),
+      tradingState:  v.tradingState.toBase58(),
+      vaultMint:     v.vaultMint.toBase58(),
+      usdcVault:     v.usdcVault.toBase58(),
+      feeBps:        v.feeBps.toString(),
+      virtualBase:   v.virtualBase.toString(),
+      virtualTokens: v.virtualTokens.toString(),
+      totalDeposits: v.totalDeposits.toString(),
+      totalVolume:   v.totalVolume.toString(),
+      twapNav:       v.twapNav.toString(),
+      twapNavTime:   v.twapNavTime,
+      paused:        v.paused,
+      verified:      v.verified,
+      createdAt:     v.createdAt,
+      metadataUri:   v.metadataUri,
+    })),
+  );
+
+  const vaults = await Promise.all(onChain.map(toVaultInfo));
+  console.log(`[loadVaults] converted VaultInfo (${vaults.length}):`, vaults);
   setCachedVaults(vaults);
+
+  // Stream metadata fetches in the background — caller's onUpdate gets
+  // called per-vault as each IPFS / data: / http resolve completes; cache
+  // is updated per-vault so partial progress survives reloads.
+  void hydrateMetadata(vaults, onUpdate);
+
   return vaults;
+}
+
+async function hydrateMetadata(
+  vaults: VaultInfo[],
+  onUpdate?: VaultUpdateCallback,
+): Promise<void> {
+  const targets = vaults.filter(v => v.metadataURI && !v.imageUrl && !v.description);
+  console.log(`[hydrateMetadata] ${targets.length}/${vaults.length} vaults have metadataURI`);
+  if (targets.length === 0) return;
+
+  await Promise.allSettled(targets.map(async (v) => {
+    console.log(`[hydrateMetadata] fetching ${v.core} → ${v.metadataURI}`);
+    const meta = await parseMetadata(v.metadataURI);
+    console.log(`[hydrateMetadata] ${v.core} parsed:`, meta);
+    const updates: Partial<VaultInfo> = {
+      imageUrl:    meta.imageUrl    || '',
+      description: meta.description || '',
+      links:       meta.links       || {},
+    };
+    Object.assign(v, updates);
+    updateCachedVault(v.core, updates);
+    onUpdate?.(v.core, updates);
+  }));
 }
 
 export async function loadVaultByAddress(coreAddress: string): Promise<VaultInfo | null> {
@@ -138,32 +221,144 @@ export async function loadVaultByAddress(coreAddress: string): Promise<VaultInfo
   try { pubkey = new PublicKey(coreAddress); } catch { return null; }
 
   const v = await fetchVaultState(connection, pubkey);
-  return v ? toVaultInfo(v) : null;
+  if (!v) return null;
+  const info = await toVaultInfo(v);
+  if (info.metadataURI) {
+    const meta = await parseMetadata(info.metadataURI);
+    info.imageUrl    = meta.imageUrl    || '';
+    info.description = meta.description || '';
+    info.links       = meta.links       || {};
+  }
+  return info;
 }
 
 export async function loadVaultById(vaultId: number | bigint): Promise<VaultInfo | null> {
   const v = await fetchVaultById(connection, vaultId);
-  return v ? toVaultInfo(v) : null;
+  if (!v) return null;
+  const info = await toVaultInfo(v);
+  if (info.metadataURI) {
+    const meta = await parseMetadata(info.metadataURI);
+    info.imageUrl    = meta.imageUrl    || '';
+    info.description = meta.description || '';
+    info.links       = meta.links       || {};
+  }
+  return info;
 }
 
-export async function parseMetadataImage(metadataURI: string): Promise<string> {
-  if (!metadataURI) return '';
+// ─── Metadata helpers ────────────────────────────────────────────────────────
+
+const PINATA_GW = 'https://cyan-defeated-lemming-99.mypinata.cloud/ipfs/';
+const DATA_JSON_PREFIX = 'data:application/json;base64,';
+
+async function fetchMetadataJson(metadataURI: string): Promise<any | null> {
+  if (!metadataURI) {
+    console.warn('[fetchMetadataJson] empty URI');
+    return null;
+  }
+  console.log('[fetchMetadataJson] fetching:', metadataURI);
   try {
+    if (metadataURI.startsWith(DATA_JSON_PREFIX)) {
+      const b64 = metadataURI.slice(DATA_JSON_PREFIX.length);
+      const decoded = typeof atob === 'function'
+        ? atob(b64)
+        : Buffer.from(b64, 'base64').toString('utf-8');
+      console.log('[fetchMetadataJson] data: prefix decoded:', decoded);
+      const json = JSON.parse(decoded);
+      console.log('[fetchMetadataJson] parsed JSON:', json);
+      return json;
+    }
     if (metadataURI.startsWith('ipfs://')) {
       const hash = metadataURI.replace('ipfs://', '');
-      const res = await fetch(`https://cyan-defeated-lemming-99.mypinata.cloud/ipfs/${hash}`, { cache: 'no-store' });
-      const json = await res.json();
-      if (json?.image?.startsWith('ipfs://')) {
-        return `https://cyan-defeated-lemming-99.mypinata.cloud/ipfs/${json.image.replace('ipfs://', '')}`;
+      const url = PINATA_GW + hash;
+      console.log('[fetchMetadataJson] ipfs → http:', url);
+      const res = await fetch(url, { cache: 'no-store' });
+      console.log('[fetchMetadataJson] response status:', res.status, res.ok);
+      if (!res.ok) {
+        console.error('[fetchMetadataJson] HTTP error', res.status, await res.text());
+        return null;
       }
-      return json?.image || '';
+      const json = await res.json();
+      console.log('[fetchMetadataJson] parsed JSON:', json);
+      return json;
     }
-    return '';
-  } catch {
-    return '';
+    if (metadataURI.startsWith('http://') || metadataURI.startsWith('https://')) {
+      console.log('[fetchMetadataJson] http fetch:', metadataURI);
+      const res = await fetch(metadataURI, { cache: 'no-store' });
+      console.log('[fetchMetadataJson] response status:', res.status, res.ok);
+      if (!res.ok) {
+        console.error('[fetchMetadataJson] HTTP error', res.status, await res.text());
+        return null;
+      }
+      const json = await res.json();
+      console.log('[fetchMetadataJson] parsed JSON:', json);
+      return json;
+    }
+    console.warn('[fetchMetadataJson] unknown URI scheme:', metadataURI);
+    return null;
+  } catch (err) {
+    console.error('[fetchMetadataJson] threw:', err, '  for URI:', metadataURI);
+    return null;
   }
 }
 
-export async function parseMetadata(metadataURI: string): Promise<{ imageUrl: string; description: string; links: { website?: string; twitter?: string; telegram?: string } }> {
-  return { imageUrl: '', description: '', links: {} };
+function resolveImageUrl(image: unknown): string {
+  console.log('[resolveImageUrl] raw image field:', image, '(type:', typeof image, ')');
+  if (typeof image !== 'string' || !image) {
+    console.warn('[resolveImageUrl] not a string or empty');
+    return '';
+  }
+  if (image.startsWith('ipfs://')) {
+    const url = PINATA_GW + image.replace('ipfs://', '');
+    console.log('[resolveImageUrl] ipfs → http:', url);
+    return url;
+  }
+  if (image.startsWith('data:')) {
+    console.log('[resolveImageUrl] data: URI (length:', image.length, ')');
+    return image;
+  }
+  if (image.startsWith('http://') || image.startsWith('https://')) {
+    console.log('[resolveImageUrl] direct http URL:', image);
+    return image;
+  }
+  console.warn('[resolveImageUrl] unknown scheme, returning empty:', image);
+  return '';
+}
+
+export async function parseMetadataImage(metadataURI: string): Promise<string> {
+  const json = await fetchMetadataJson(metadataURI);
+  return resolveImageUrl(json?.image);
+}
+
+export async function parseMetadata(metadataURI: string): Promise<{
+  imageUrl: string;
+  description: string;
+  links: { website?: string; twitter?: string; telegram?: string };
+}> {
+  console.group('[parseMetadata]', metadataURI);
+  const json = await fetchMetadataJson(metadataURI);
+  if (!json) {
+    console.warn('[parseMetadata] no JSON, returning empty');
+    console.groupEnd();
+    return { imageUrl: '', description: '', links: {} };
+  }
+  console.log('[parseMetadata] JSON keys:', Object.keys(json));
+  console.log('[parseMetadata] json.image:', json.image);
+  console.log('[parseMetadata] json.imageUrl:', json.imageUrl);
+  console.log('[parseMetadata] json.description:', json.description);
+  console.log('[parseMetadata] json.links:', json.links);
+
+  // Try multiple common keys for image (image / imageUrl / image_url)
+  const imageRaw = json.image ?? json.imageUrl ?? json.image_url;
+  const result = {
+    imageUrl:    resolveImageUrl(imageRaw),
+    description: typeof json.description === 'string' ? json.description : '',
+    links: {
+      website:  typeof json.links?.website  === 'string' ? json.links.website  : undefined,
+      twitter:  typeof json.links?.twitter  === 'string' ? json.links.twitter  : undefined,
+      telegram: typeof json.links?.telegram === 'string' ? json.links.telegram : undefined,
+    },
+  };
+  console.log('[parseMetadata] FINAL:', result);
+  console.groupEnd();
+  return result;
 }

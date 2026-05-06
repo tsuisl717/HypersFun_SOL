@@ -22,9 +22,11 @@ import {
 import { sha256 } from '@noble/hashes/sha256';
 import fs from 'node:fs';
 
+process.loadEnvFile('.env');
+
 // ─── Config ──────────────────────────────────────────────────────────────────
-const PROGRAM_ID = new PublicKey('Fw34m2EoYUqFuTHRZSzdtWRNiEHg3RJpDyjnDfM2gDpe');
-const USDC_MINT  = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
+const PROGRAM_ID = new PublicKey(process.env.NEXT_PUBLIC_PROGRAM_ID);
+const USDC_MINT  = new PublicKey(process.env.NEXT_PUBLIC_USDC_MINT);
 const RPC        = 'https://api.devnet.solana.com';
 const ID_JSON    = 'C:\\Users\\user\\Desktop\\Project\\HypersFun_Contract_Test\\id.json';
 

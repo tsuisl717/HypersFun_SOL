@@ -21,6 +21,7 @@ import {
   buildCreateVaultIx,
   buildInitVaultAssetsIx,
   buildInitializeFactoryIx,
+  buildSetMetadataUriIx,
   type FactoryStateLite,
 } from '@/lib/contracts/program';
 
@@ -54,6 +55,8 @@ export default function LaunchPage() {
   const [result, setResult]         = useState<{
     sig1: string;
     sig2: string;
+    sig3: string | null;
+    metadataTxError: string | null;
     vaultPda: string;
     vaultMint: string;
     usdcVault: string;
@@ -122,21 +125,35 @@ export default function LaunchPage() {
 
   // ── Pinata upload helpers ─────────────────────────────────────────────────
   const uploadFileToIpfs = async (file: File): Promise<string> => {
+    console.log('[uploadFileToIpfs] uploading file:', file.name, file.size, 'bytes');
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/pinata/upload', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error(`Image upload failed (${res.status})`);
+    console.log('[uploadFileToIpfs] response:', res.status, res.ok);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[uploadFileToIpfs] error body:', text);
+      throw new Error(`Image upload failed (${res.status}): ${text}`);
+    }
     const json = await res.json();
+    console.log('[uploadFileToIpfs] result:', json);
     if (!json.ipfsUrl) throw new Error('Image upload returned no ipfsUrl');
     return json.ipfsUrl as string;
   };
 
   const uploadJsonToIpfs = async (obj: unknown): Promise<string> => {
+    console.log('[uploadJsonToIpfs] uploading JSON:', obj);
     const fd = new FormData();
     fd.append('metadata', JSON.stringify(obj));
     const res = await fetch('/api/pinata/upload', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error(`Metadata upload failed (${res.status})`);
+    console.log('[uploadJsonToIpfs] response:', res.status, res.ok);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[uploadJsonToIpfs] error body:', text);
+      throw new Error(`Metadata upload failed (${res.status}): ${text}`);
+    }
     const json = await res.json();
+    console.log('[uploadJsonToIpfs] result:', json);
     if (!json.ipfsUrl) throw new Error('Metadata upload returned no ipfsUrl');
     return json.ipfsUrl as string;
   };
@@ -172,20 +189,26 @@ export default function LaunchPage() {
       if (telegram.trim()) links.telegram = telegram.trim();
 
       const hasMetadata = imageFile || description.trim() || Object.keys(links).length > 0;
+      console.log('[onCreate] hasMetadata =', hasMetadata, '{ imageFile:', !!imageFile, ', description:', description.length, 'chars, links:', Object.keys(links).length, '}');
       if (hasMetadata) {
         if (imageFile) {
           setUploadStage('Uploading image to IPFS…');
           imageIpfsUrl = await uploadFileToIpfs(imageFile);
+          console.log('[onCreate] imageIpfsUrl =', imageIpfsUrl);
         }
         setUploadStage('Uploading metadata to IPFS…');
-        metadataUri = await uploadJsonToIpfs({
+        const metaJson = {
           name:        name.trim(),
           symbol:      symbol.trim().toUpperCase(),
           description: description.trim(),
           image:       imageIpfsUrl ?? '',
           links,
-        });
+        };
+        metadataUri = await uploadJsonToIpfs(metaJson);
+        console.log('[onCreate] metadataUri =', metadataUri);
         setUploadStage(null);
+      } else {
+        console.log('[onCreate] no metadata to upload — skipping TX 3 set_metadata_uri');
       }
 
       const { createVault, initAssets } = await prepareCreateVaultAccounts(connection, publicKey);
@@ -204,9 +227,35 @@ export default function LaunchPage() {
       const sig2 = await sendTransaction(tx2, connection);
       await connection.confirmTransaction(sig2, 'confirmed');
 
+      // ── TX 3: set_metadata_uri (non-blocking — vault is already live) ──
+      let sig3: string | null = null;
+      let metadataTxError: string | null = null;
+      if (metadataUri) {
+        console.log('[onCreate] TX 3: writing metadata URI on-chain:', metadataUri);
+        try {
+          setUploadStage('Writing metadata URI on-chain…');
+          const tx3 = new Transaction().add(buildSetMetadataUriIx(
+            { leader: publicKey, vaultState: createVault.vaultState },
+            metadataUri,
+          ));
+          sig3 = await sendTransaction(tx3, connection);
+          console.log('[onCreate] TX 3 sent, sig:', sig3);
+          await connection.confirmTransaction(sig3, 'confirmed');
+          console.log('[onCreate] TX 3 confirmed ✅');
+        } catch (e: any) {
+          console.error('[onCreate] TX 3 set_metadata_uri FAILED:', e);
+          if (e?.logs) console.error('[onCreate] TX 3 logs:', e.logs);
+          metadataTxError = e?.message ?? String(e);
+        }
+      } else {
+        console.log('[onCreate] no metadataUri — TX 3 skipped');
+      }
+
       setResult({
         sig1,
         sig2,
+        sig3,
+        metadataTxError,
         vaultPda:  createVault.vaultState.toBase58(),
         vaultMint: initAssets.vaultMint.toBase58(),
         usdcVault: initAssets.usdcVault.toBase58(),
@@ -423,14 +472,34 @@ export default function LaunchPage() {
               <Row label="Vault PDA"   value={result.vaultPda}   link={`${EXPLORER_BASE}/address/${result.vaultPda}${cluster}`} />
               <Row label="Vault Mint"  value={result.vaultMint}  link={`${EXPLORER_BASE}/address/${result.vaultMint}${cluster}`} />
               <Row label="USDC ATA"    value={result.usdcVault}  link={`${EXPLORER_BASE}/address/${result.usdcVault}${cluster}`} />
-              <Row label="Tx 1"        value={result.sig1}       link={`${EXPLORER_BASE}/tx/${result.sig1}${cluster}`} />
-              <Row label="Tx 2"        value={result.sig2}       link={`${EXPLORER_BASE}/tx/${result.sig2}${cluster}`} />
+              <Row label="Tx 1 create_vault"     value={result.sig1} link={`${EXPLORER_BASE}/tx/${result.sig1}${cluster}`} />
+              <Row label="Tx 2 init_vault_assets" value={result.sig2} link={`${EXPLORER_BASE}/tx/${result.sig2}${cluster}`} />
               {result.metadataUri && (
                 <Row
                   label="Metadata URI"
                   value={result.metadataUri}
                   link={`https://cyan-defeated-lemming-99.mypinata.cloud/ipfs/${result.metadataUri.replace('ipfs://', '')}`}
                 />
+              )}
+              {result.sig3 && (
+                <Row label="Tx 3 set_metadata_uri" value={result.sig3} link={`${EXPLORER_BASE}/tx/${result.sig3}${cluster}`} />
+              )}
+              {result.metadataTxError && (
+                <div className="border-t border-yellow-600/40 mt-2 pt-2 space-y-1">
+                  <div className="text-yellow-500 uppercase tracking-widest text-[10px] font-bold">
+                    ⚠ Metadata write skipped
+                  </div>
+                  <div className="text-yellow-300/80 text-[10px] break-all whitespace-pre-wrap">
+                    {result.metadataTxError}
+                  </div>
+                  <div className="text-gray-500 text-[10px] leading-relaxed">
+                    Vault is live on-chain. The IPFS metadata URI exists but isn't linked
+                    to the vault. If the program uses a different instruction name than{' '}
+                    <code className="text-yellow-400">set_metadata_uri</code>, update{' '}
+                    <code className="text-yellow-400">buildSetMetadataUriIx</code> in{' '}
+                    <code className="text-yellow-400">lib/contracts/program.ts</code>.
+                  </div>
+                </div>
               )}
             </div>
           )}

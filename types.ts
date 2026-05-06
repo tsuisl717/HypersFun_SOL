@@ -35,6 +35,7 @@ export interface Token {
   positions?: TokenPosition[]; // L1 perp positions
   winRate?: number;  // L1 trading win rate (0-1)
   apy?: number;      // Annual percentage yield
+  links?: { website?: string; twitter?: string; telegram?: string };
 }
 
 export interface Trade {

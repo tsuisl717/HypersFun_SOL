@@ -405,6 +405,37 @@ export function buildInitVaultAssetsIx(
   });
 }
 
+// ─── Instruction: set_metadata_uri (TX 3 — leader writes metadata URI) ───────
+//
+// Mirrors the EVM `setMetadataURI(string)` setter from HyperFunFactory guide.
+// Anchor convention: snake-case method name, args = String (borsh: u32 LE len
+// + utf-8 bytes). Max length on-chain is 256 bytes (see VaultState layout).
+//
+// If the deployed program uses a different name, change `set_metadata_uri`
+// below and the wrapper in app/launch/page.tsx will pick it up.
+export interface SetMetadataUriAccounts {
+  leader: PublicKey;
+  vaultState: PublicKey;
+}
+
+export function buildSetMetadataUriIx(
+  accounts: SetMetadataUriAccounts,
+  uri: string,
+): TransactionInstruction {
+  if (Buffer.byteLength(uri, 'utf-8') > 256) {
+    throw new Error('metadata_uri exceeds on-chain max of 256 bytes');
+  }
+  const data = Buffer.concat([disc('set_metadata_uri'), enc_string(uri)]);
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: accounts.leader,     isSigner: true,  isWritable: true },
+      { pubkey: accounts.vaultState, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+}
+
 /**
  * Resolve PDAs + ATA addresses needed for the 2-step create-vault flow.
  * Reads factory state to get the next vault_id.
