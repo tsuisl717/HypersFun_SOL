@@ -11,6 +11,7 @@ import { USDC_MINT } from '@/lib/contracts/config';
 import {
   buildBuyIx,
   buildSellIx,
+  buildInitUserVaultStateIx,
   prepareTradeAccounts,
   fetchVaultState,
   type VaultStateData,
@@ -93,29 +94,64 @@ export default function TradePanel({
     setSubmitting(true);
     setStatus({ kind: 'info', msg: 'Building transaction…' });
     try {
-      const accounts = await prepareTradeAccounts(connection, vaultPk, publicKey);
+      const prep = await prepareTradeAccounts(connection, vaultPk, publicKey);
+      const { accounts, needsUserVaultState, needsUserUsdcAta, needsUserTokenAta } = prep;
+
       const tx = new Transaction();
-      tx.add(createAssociatedTokenAccountIdempotentInstruction(
-        publicKey, accounts.userUsdcAccount, publicKey, USDC_MINT,
-      ));
-      tx.add(createAssociatedTokenAccountIdempotentInstruction(
-        publicKey, accounts.userVaultAccount, publicKey, accounts.vaultMint,
-      ));
+
+      // Idempotent ATA creation — cheap if already exists.
+      if (needsUserUsdcAta) {
+        tx.add(createAssociatedTokenAccountIdempotentInstruction(
+          publicKey, accounts.userUsdc, publicKey, USDC_MINT,
+        ));
+      }
+      if (needsUserTokenAta) {
+        tx.add(createAssociatedTokenAccountIdempotentInstruction(
+          publicKey, accounts.userTokenAccount, publicKey, accounts.vaultMint,
+        ));
+      }
+
+      // user_vault_state PDA (only first time per user × vault)
+      if (needsUserVaultState) {
+        tx.add(buildInitUserVaultStateIx({
+          user:           publicKey,
+          vaultState:     accounts.vaultState,
+          userVaultState: accounts.userVaultState,
+        }));
+      }
+
       if (side === 'buy') {
         tx.add(buildBuyIx(accounts, BigInt(Math.floor(n * 1_000_000))));
       } else {
         tx.add(buildSellIx(accounts, BigInt(Math.floor(n * 1_000_000_000))));
       }
+
+      tx.feePayer = publicKey;
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+
+      // Simulate first so on-chain program errors surface clearly instead of
+      // being wrapped as the wallet's generic "Unexpected error".
+      setStatus({ kind: 'info', msg: 'Simulating…' });
+      const sim = await connection.simulateTransaction(tx, undefined);
+      if (sim.value.err) {
+        const logs = sim.value.logs?.join('\n') ?? '';
+        throw new Error(
+          `Simulation failed: ${JSON.stringify(sim.value.err)}\n${logs.slice(-800)}`
+        );
+      }
+
       setStatus({ kind: 'info', msg: 'Awaiting wallet confirmation…' });
       const sig = await sendTransaction(tx, connection);
       setStatus({ kind: 'info', msg: 'Confirming…', sig });
-      await connection.confirmTransaction(sig, 'confirmed');
+      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
       setStatus({ kind: 'ok', msg: side === 'buy' ? 'Buy successful!' : 'Sell successful!', sig });
       setAmount('');
       await Promise.all([refreshBalances(), refreshVaultState()]);
       onTradeComplete?.();
     } catch (e: any) {
       const msg = e?.message ?? String(e);
+      console.error('[Trade] error:', e);
       setStatus({ kind: 'err', msg: msg.includes('User rejected') ? 'Transaction rejected.' : msg });
     } finally {
       setSubmitting(false);

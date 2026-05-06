@@ -38,22 +38,24 @@ export default function VaultDetailPage({
 
   const [pageTab, setPageTab] = useState<PageTab>('trading');
 
-  const loadVault = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadVault = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       try { new PublicKey(id); } catch {
         setError('Invalid vault address.');
-        setLoading(false);
+        if (!silent) setLoading(false);
         return;
       }
       const v = await loadVaultByAddress(id);
-      if (!v) { setError('Vault not found.'); setVault(null); }
+      if (!v) { if (!silent) setError('Vault not found.'); setVault(null); }
       else    { setVault(v); }
     } catch (e: any) {
-      setError(e?.message ?? 'Failed to load vault.');
+      if (!silent) setError(e?.message ?? 'Failed to load vault.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [id]);
 
@@ -73,7 +75,7 @@ export default function VaultDetailPage({
   useEffect(() => { if (vault?.core) loadAux(vault.core); }, [vault?.core, loadAux]);
 
   const onChange = useCallback(() => {
-    loadVault();
+    loadVault({ silent: true });
     if (vault?.core) loadAux(vault.core);
   }, [loadVault, loadAux, vault?.core]);
 

@@ -479,27 +479,59 @@ export async function prepareCreateVaultAccounts(
   };
 }
 
-// ─── Instruction: buy (USDC → vault token) ───────────────────────────────────
+// ─── PDA helper for per-user vault PDA ───────────────────────────────────────
+export function findUserVaultStatePda(user: PublicKey, vaultState: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('user-vault'), user.toBuffer(), vaultState.toBuffer()],
+    PROGRAM_ID,
+  );
+}
+
+// ─── Instruction: init_user_vault_state ──────────────────────────────────────
 //
-// Mirrors the EVM `buy(uint256 usdcAmount, uint256 minTokensOut)` flow.
-// If the deployed program uses a different snake-case name (e.g. `deposit`),
-// change the discriminator string below.
-export interface BuyAccounts {
+// Must be called once per (user, vault) pair before buy/sell. Split out from
+// buy() to keep BuyCtx under the SBF 4 KB stack limit.
+export interface InitUserVaultStateAccounts {
   user: PublicKey;
   vaultState: PublicKey;
-  vaultMint: PublicKey;
-  usdcVault: PublicKey;          // vault's USDC ATA (PDA-owned)
-  userUsdcAccount: PublicKey;    // user's USDC ATA
-  userVaultAccount: PublicKey;   // user's vault-token ATA
+  userVaultState: PublicKey;
+}
+
+export function buildInitUserVaultStateIx(
+  accounts: InitUserVaultStateAccounts,
+): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: accounts.user,            isSigner: true,  isWritable: true  },
+      { pubkey: accounts.vaultState,      isSigner: false, isWritable: false },
+      { pubkey: accounts.userVaultState,  isSigner: false, isWritable: true  },
+      { pubkey: SystemProgram.programId,  isSigner: false, isWritable: false },
+    ],
+    data: disc('init_user_vault_state'),
+  });
+}
+
+// ─── Instruction: buy (USDC → vault token) ───────────────────────────────────
+//
+// New signature (post stack-budget refactor): no treasury_usdc, no system /
+// associated_token_program, no rent. user_vault_state and user_token_account
+// must be PRE-CREATED (use buildInitUserVaultStateIx + ATA program).
+export interface BuyAccounts {
+  user: PublicKey;
   factoryState: PublicKey;
-  treasuryUsdcAccount: PublicKey; // factory.treasury's USDC ATA (for trading fee)
-  usdcMint: PublicKey;
+  vaultState: PublicKey;
+  userVaultState: PublicKey;     // user-vault PDA (must exist)
+  vaultMint: PublicKey;
+  userTokenAccount: PublicKey;    // user's vault-token ATA (must exist)
+  usdcVault: PublicKey;           // vault's USDC ATA (PDA-owned)
+  userUsdc: PublicKey;            // user's USDC ATA (must exist + funded)
 }
 
 export function buildBuyIx(
   accounts: BuyAccounts,
-  usdcAmount: bigint | number,    // u64, 6-dec USDC
-  minTokensOut: bigint | number = 0n, // u64
+  usdcAmount: bigint | number,         // u64, 6-dec USDC
+  minTokensOut: bigint | number = 0n,  // u64, 9-dec vault token
 ): TransactionInstruction {
   const data = Buffer.concat([
     disc('buy'),
@@ -509,30 +541,28 @@ export function buildBuyIx(
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
-      { pubkey: accounts.user,                isSigner: true,  isWritable: true  },
-      { pubkey: accounts.vaultState,          isSigner: false, isWritable: true  },
-      { pubkey: accounts.vaultMint,           isSigner: false, isWritable: true  },
-      { pubkey: accounts.usdcVault,           isSigner: false, isWritable: true  },
-      { pubkey: accounts.userUsdcAccount,     isSigner: false, isWritable: true  },
-      { pubkey: accounts.userVaultAccount,    isSigner: false, isWritable: true  },
-      { pubkey: accounts.factoryState,        isSigner: false, isWritable: false },
-      { pubkey: accounts.treasuryUsdcAccount, isSigner: false, isWritable: true  },
-      { pubkey: accounts.usdcMint,            isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false },
-      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,  isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId,      isSigner: false, isWritable: false },
+      { pubkey: accounts.user,             isSigner: true,  isWritable: true  },
+      { pubkey: accounts.factoryState,     isSigner: false, isWritable: false },
+      { pubkey: accounts.vaultState,       isSigner: false, isWritable: true  },
+      { pubkey: accounts.userVaultState,   isSigner: false, isWritable: true  },
+      { pubkey: accounts.vaultMint,        isSigner: false, isWritable: true  },
+      { pubkey: accounts.userTokenAccount, isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcVault,        isSigner: false, isWritable: true  },
+      { pubkey: accounts.userUsdc,         isSigner: false, isWritable: true  },
+      { pubkey: TOKEN_PROGRAM_ID,          isSigner: false, isWritable: false },
     ],
     data,
   });
 }
 
 // ─── Instruction: sell (vault token → USDC) ──────────────────────────────────
-export interface SellAccounts extends BuyAccounts {}
+// Same account list as buy.
+export type SellAccounts = BuyAccounts;
 
 export function buildSellIx(
   accounts: SellAccounts,
-  tokenAmount: bigint | number,   // u64, 9-dec vault token
-  minUsdcOut: bigint | number = 0n, // u64
+  tokenAmount: bigint | number,    // u64, 9-dec vault token
+  minUsdcOut: bigint | number = 0n, // u64, 6-dec USDC
 ): TransactionInstruction {
   const data = Buffer.concat([
     disc('sell'),
@@ -542,18 +572,15 @@ export function buildSellIx(
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
-      { pubkey: accounts.user,                isSigner: true,  isWritable: true  },
-      { pubkey: accounts.vaultState,          isSigner: false, isWritable: true  },
-      { pubkey: accounts.vaultMint,           isSigner: false, isWritable: true  },
-      { pubkey: accounts.usdcVault,           isSigner: false, isWritable: true  },
-      { pubkey: accounts.userUsdcAccount,     isSigner: false, isWritable: true  },
-      { pubkey: accounts.userVaultAccount,    isSigner: false, isWritable: true  },
-      { pubkey: accounts.factoryState,        isSigner: false, isWritable: false },
-      { pubkey: accounts.treasuryUsdcAccount, isSigner: false, isWritable: true  },
-      { pubkey: accounts.usdcMint,            isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID,             isSigner: false, isWritable: false },
-      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,  isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId,      isSigner: false, isWritable: false },
+      { pubkey: accounts.user,             isSigner: true,  isWritable: true  },
+      { pubkey: accounts.factoryState,     isSigner: false, isWritable: false },
+      { pubkey: accounts.vaultState,       isSigner: false, isWritable: true  },
+      { pubkey: accounts.userVaultState,   isSigner: false, isWritable: true  },
+      { pubkey: accounts.vaultMint,        isSigner: false, isWritable: true  },
+      { pubkey: accounts.userTokenAccount, isSigner: false, isWritable: true  },
+      { pubkey: accounts.usdcVault,        isSigner: false, isWritable: true  },
+      { pubkey: accounts.userUsdc,         isSigner: false, isWritable: true  },
+      { pubkey: TOKEN_PROGRAM_ID,          isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -601,31 +628,57 @@ export function buildSetVerifiedIx(
   });
 }
 
-// ─── Helper: prepare buy/sell accounts for a given user + vault ──────────────
+// ─── Helper: prepare all PDAs / ATAs for buy + sell ──────────────────────────
+//
+// Reads the on-chain vault state to get its actual usdcVault / vaultMint
+// (rather than re-deriving them, since they were set by init_vault_assets).
+// Also returns whether each prerequisite account exists on chain so the caller
+// can prepend the right createATA / init_user_vault_state instructions.
+export interface TradePrep {
+  accounts: BuyAccounts;
+  needsUserVaultState: boolean;
+  needsUserUsdcAta: boolean;
+  needsUserTokenAta: boolean;
+}
+
 export async function prepareTradeAccounts(
   connection: Connection,
   vaultState: PublicKey,
   user: PublicKey,
-): Promise<BuyAccounts> {
+): Promise<TradePrep> {
   const factory = await fetchFactoryState(connection);
   if (!factory) throw new Error('Factory not initialized.');
 
-  const [factoryPda] = findFactoryPda();
-  const [vaultMintPda] = findVaultMintPda(vaultState);
-  const usdcVault          = await getAssociatedTokenAddress(factory.usdcMint, vaultState, true);
-  const userUsdcAccount    = await getAssociatedTokenAddress(factory.usdcMint, user);
-  const userVaultAccount   = await getAssociatedTokenAddress(vaultMintPda, user);
-  const treasuryUsdcAccount = await getAssociatedTokenAddress(factory.usdcMint, factory.treasury);
+  // Read the vault to get the actual vault_mint + usdc_vault pubkeys.
+  const v = await fetchVaultState(connection, vaultState);
+  if (!v) throw new Error('Vault not found: ' + vaultState.toBase58());
+  if (v.vaultMint.equals(PublicKey.default) || v.usdcVault.equals(PublicKey.default)) {
+    throw new Error('Vault assets not initialized — call init_vault_assets first.');
+  }
+
+  const [factoryPda]     = findFactoryPda();
+  const [userVaultState] = findUserVaultStatePda(user, vaultState);
+  const userUsdc         = await getAssociatedTokenAddress(factory.usdcMint, user);
+  const userTokenAccount = await getAssociatedTokenAddress(v.vaultMint, user);
+
+  // Existence checks (single batched RPC call).
+  const [uvsAcc, uuAcc, utAcc] = await connection.getMultipleAccountsInfo([
+    userVaultState, userUsdc, userTokenAccount,
+  ]);
 
   return {
-    user,
-    vaultState,
-    vaultMint: vaultMintPda,
-    usdcVault,
-    userUsdcAccount,
-    userVaultAccount,
-    factoryState: factoryPda,
-    treasuryUsdcAccount,
-    usdcMint: factory.usdcMint,
+    accounts: {
+      user,
+      factoryState:     factoryPda,
+      vaultState,
+      userVaultState,
+      vaultMint:        v.vaultMint,
+      userTokenAccount,
+      usdcVault:        v.usdcVault,
+      userUsdc,
+    },
+    needsUserVaultState: uvsAcc === null,
+    needsUserUsdcAta:    uuAcc === null,
+    needsUserTokenAta:   utAcc === null,
   };
 }
