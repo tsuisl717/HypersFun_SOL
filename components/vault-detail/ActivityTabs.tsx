@@ -25,7 +25,7 @@ export default function ActivityTabs({
   const [subTab, setSubTab] = useState<SubTab>('trades');
 
   return (
-    <div className="border border-border bg-surface flex flex-col">
+    <div className="border border-border bg-surface flex flex-col h-full">
       {/* Vault tab strip */}
       <div className="flex items-center gap-0 px-1 border-b border-border bg-black/40 overflow-x-auto">
         <span className="px-3 py-2 text-[10px] font-mono text-gray-600 uppercase tracking-widest">VAULT:</span>

@@ -131,7 +131,7 @@ export default function ChartPanel({ vault }: { vault: VaultInfo }) {
       </div>
 
       {/* Chart */}
-      <div className="relative flex-1 min-h-[320px]">
+      <div className="relative h-[420px]">
         <div ref={containerRef} className="absolute inset-0" />
         <div className="absolute top-3 left-3 text-[10px] font-mono text-gray-600 uppercase tracking-widest pointer-events-none">
           ⓘ Price history coming soon — showing current NAV reference line
