@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #50d2c1;
+  --color-secondary: #87e2d7;
+  --color-dark: #010409;
+  --color-surface: #0d1117;
+  --color-card: #161b22;
+  --color-border: #30363d;
+
+  --font-family-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-family-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  background: radial-gradient(circle at 50% 0%, #50d2c120 0%, #010409 80%);
+  background-color: #010409;
+  color: #ffffff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Circuitry Pattern Background */
+.circuitry-bg {
+  background-image: radial-gradient(circle at 2px 2px, #50d2c110 1px, transparent 0);
+  background-size: 40px 40px;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.circuitry-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(#50d2c105 1px, transparent 1px), linear-gradient(90deg, #50d2c105 1px, transparent 1px);
+  background-size: 100px 100px;
+}
+
+.metallic-emerald {
+  background: linear-gradient(135deg, #50d2c1 0%, #059669 100%);
+  box-shadow: 0 0 20px rgba(80, 210, 193, 0.3);
+}
+
+.v-logo-shadow {
+  filter: drop-shadow(0 0 10px rgba(80, 210, 193, 0.5));
+}
+
+@keyframes circuit-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+.circuit-trace {
+  stroke-dasharray: 100;
+  animation: dash 5s linear infinite;
+}
+
+@keyframes dash {
+  to { stroke-dashoffset: -200; }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 40s linear infinite;
+}
+
+.biometric-scan {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(80, 210, 193, 0.1), transparent);
+  animation: scan 4s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #010409; }
+::-webkit-scrollbar-thumb { background: #50d2c1; border-radius: 2px; }
+
+/* ========================================
+   GLOBAL FONT CONSISTENCY
+   All fonts unified to bold (700) weight
+   ======================================== */
+
+/* Override all Tailwind font weights to bold */
+.font-normal,
+.font-medium,
+.font-semibold,
+.font-bold,
+.font-black {
+  font-weight: 700 !important;
+}
+
+/* Monospace font always bold */
+.font-mono,
+code,
+pre {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 700 !important;
+}
+
+/* All inputs use monospace bold */
+input,
+select,
+textarea {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-weight: 700 !important;
+}
+
+/* Table cells - monospace bold */
+table td {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+}
+
+/* Table headers - bold uppercase tracking */
+table th {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Buttons always bold */
+button {
+  font-weight: 700 !important;
+}
+
+/* All text elements bold */
+span,
+p,
+div,
+label {
+  font-weight: 700;
+}
+
+/* Links bold */
+a {
+  font-weight: 700;
+}
