@@ -534,7 +534,7 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         )}
 
         {activeTab === 'margin' && isLeader && (
-          <div className="h-full p-4">
+          <div className="flex-1 flex flex-col min-h-0">
             <MarginTradingPanel
               vaultPda={vault.address}
               leaderAddress={vault.leader}

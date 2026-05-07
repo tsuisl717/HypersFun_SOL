@@ -200,10 +200,17 @@ export async function buildOpenMarginPositionTx(
   direction: 0 | 1,   // 0=Long, 1=Short
   usdcCollateral: anchor.BN,  // in µUSDC (6 decimals)
   leverageBps: anchor.BN,     // e.g. 20000 = 2x
-  oraclePriceUsdc: anchor.BN  // in µUSDC/token
+  oraclePriceUsdc: anchor.BN, // in µUSDC/token
+  // Optional overrides — when caller resolved PerpMarket+Oracle on-chain
+  // (e.g. for markets not in PERP_MARKETS), pass them here. Otherwise we
+  // fall back to the static PERP_MARKETS table.
+  perpMarketOverride?: PublicKey,
+  perpOracleOverride?: PublicKey,
 ) {
   const program = getProgram(provider);
   const market = getPerpMarket(marketIndex);
+  const perpMarket = perpMarketOverride ?? new PublicKey(market.perpMarket);
+  const perpOracle = perpOracleOverride ?? new PublicKey(market.oracle);
   const [usdcVaultPda] = getUsdcVaultPda(vaultPda);
   const [marginPosPda] = getMarginPositionPda(vaultPda, marketIndex);
   const [driftUserPda] = getDriftUserPda(vaultPda);
@@ -224,10 +231,10 @@ export async function buildOpenMarginPositionTx(
     driftState: new PublicKey(DRIFT_CONFIG.state),
     driftSpotVault: new PublicKey(DRIFT_CONFIG.usdcSpotVault),
     usdcSpotMarket: new PublicKey(DRIFT_CONFIG.usdcSpotMarket),
-    perpMarket: new PublicKey(market.perpMarket),
+    perpMarket,
     usdcOracle: new PublicKey(DRIFT_CONFIG.usdcOracle),
     usdcMint: new PublicKey(USDC_MINT),
-    perpOracle: new PublicKey(market.oracle),
+    perpOracle,
     driftProgram: new PublicKey(DRIFT_CONFIG.programId),
     leader,
     tokenProgram: TOKEN_PROGRAM_ID,
@@ -240,10 +247,14 @@ export async function buildCloseMarginPositionTx(
   provider: anchor.AnchorProvider,
   vaultPda: PublicKey,
   leader: PublicKey,
-  marketIndex: number
+  marketIndex: number,
+  perpMarketOverride?: PublicKey,
+  perpOracleOverride?: PublicKey,
 ) {
   const program = getProgram(provider);
   const market = getPerpMarket(marketIndex);
+  const perpMarket = perpMarketOverride ?? new PublicKey(market.perpMarket);
+  const perpOracle = perpOracleOverride ?? new PublicKey(market.oracle);
   const [marginPosPda] = getMarginPositionPda(vaultPda, marketIndex);
   const [driftUserPda] = getDriftUserPda(vaultPda);
 
@@ -253,9 +264,9 @@ export async function buildCloseMarginPositionTx(
     driftUser: driftUserPda,
     driftState: new PublicKey(DRIFT_CONFIG.state),
     usdcSpotMarket: new PublicKey(DRIFT_CONFIG.usdcSpotMarket),
-    perpMarket: new PublicKey(market.perpMarket),
+    perpMarket,
     usdcOracle: new PublicKey(DRIFT_CONFIG.usdcOracle),
-    perpOracle: new PublicKey(market.oracle),
+    perpOracle,
     driftProgram: new PublicKey(DRIFT_CONFIG.programId),
     leader,
     systemProgram: SystemProgram.programId,
@@ -268,10 +279,14 @@ export async function buildWithdrawDriftUsdcTx(
   vaultPda: PublicKey,
   leader: PublicKey,
   marketIndex: number,
-  withdrawAmount: anchor.BN  // µUSDC
+  withdrawAmount: anchor.BN,  // µUSDC
+  perpMarketOverride?: PublicKey,
+  perpOracleOverride?: PublicKey,
 ) {
   const program = getProgram(provider);
   const market = getPerpMarket(marketIndex);
+  const perpMarket = perpMarketOverride ?? new PublicKey(market.perpMarket);
+  const perpOracle = perpOracleOverride ?? new PublicKey(market.oracle);
   const [usdcVaultPda] = getUsdcVaultPda(vaultPda);
   const [driftUserPda] = getDriftUserPda(vaultPda);
   const [driftUserStatsPda] = getDriftUserStatsPda(vaultPda);
@@ -289,8 +304,8 @@ export async function buildWithdrawDriftUsdcTx(
     driftSigner: new PublicKey(DRIFT_CONFIG.signer),
     usdcSpotMarket: new PublicKey(DRIFT_CONFIG.usdcSpotMarket),
     usdcOracle: new PublicKey(DRIFT_CONFIG.usdcOracle),
-    perpOracle: new PublicKey(market.oracle),
-    perpMarket: new PublicKey(market.perpMarket),
+    perpOracle,
+    perpMarket,
     usdcMint: new PublicKey(USDC_MINT),
     driftProgram: new PublicKey(DRIFT_CONFIG.programId),
     leader,
