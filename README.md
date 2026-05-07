@@ -47,6 +47,7 @@ lib/
   indicators.ts       Chart indicators
   hooks/              React hooks (e.g. useFactoryStats)
 public/images/        Static assets (logo, hero video, OG image)
+programs/             Anchor smart contracts (Rust) — the on-chain HypersFun program
 ```
 
 Key contract config lives in [lib/contracts/config.ts](lib/contracts/config.ts) — switch between `devnet` and `mainnet-beta` via `NEXT_PUBLIC_SOLANA_NETWORK`.
