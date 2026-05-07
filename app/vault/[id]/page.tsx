@@ -58,8 +58,8 @@ const MarginTradingPanel = dynamic(
   () => import('@/components/bonding-curve-vault/MarginTradingPanel'),
   { ssr: false },
 );
-const ReportPanel = dynamic(
-  () => import('@/components/bonding-curve-vault/ReportPanel'),
+const SimulationPanel = dynamic(
+  () => import('@/components/bonding-curve-vault/SimulationPanel'),
   {
     ssr: false,
     loading: () => (
@@ -485,7 +485,7 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
       {/* ─── Main content ──────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col">
         {activeTab === 'trading' && (
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-px bg-border">
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_460px] gap-px bg-border">
             {/* Left column: chart + activity tabs */}
             <div className="flex flex-col min-w-0">
               <div className="bg-[#131722] h-[500px] lg:h-[560px]">
@@ -525,25 +525,18 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         )}
 
         {activeTab === 'report' && (
-          <div className="p-4 space-y-4">
-            {/* Live vault snapshot (on-chain reads) */}
-            <Section title="Vault Snapshot">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px bg-border">
-                <KV label="MCap" value={`$${mcap.toFixed(2)}`} accent="text-white" />
-                <KV label="Assets" value={`$${totalAssets.toFixed(2)}`} accent="text-cyan-400" />
-                <KV label="Supply" value={vault.totalSupply.toFixed(2)} accent="text-white" />
-                <KV label="USDC Reserve" value={`$${vault.usdcReserve.toFixed(2)}`} accent="text-white" />
-                <KV label="External" value={`$${vault.externalAssets.toFixed(2)}`} accent="text-amber-300" />
-                <KV label="Buy" value={`$${buyPrice.toFixed(4)}`} accent="text-primary" />
-                <KV label="Sell" value={`$${sellPrice.toFixed(4)}`} accent="text-red-400" />
-                <KV label="Raw NAV" value={`$${rawNav.toFixed(4)}`} accent="text-yellow-400" />
-                <KV label="Perf Fee" value={`${(vault.performanceFeeBps / 100).toFixed(0)}%`} accent="text-white" />
-                <KV label="Status" value={vault.isPaused ? 'Paused' : 'Active'} accent={vault.isPaused ? 'text-rose-400' : 'text-lime-400'} />
-              </div>
-            </Section>
-
+          <div className="h-full">
             {/* Trading report — driven by /api/vault/report (cached server-side) */}
-            <ReportPanel vaultAddress={vault.address} />
+            <SimulationPanel
+              vaultAddress={vault.address}
+              vBase={vault.bcVirtualBase}
+              vTokens={vault.bcVirtualTokens}
+              tradingFeeBps={100}
+              performanceFeeBps={vault.performanceFeeBps}
+              maxPremiumBps={10000}
+              maxDiscountBps={5000}
+              navVirtualMul={0.01}
+            />
           </div>
         )}
       </main>

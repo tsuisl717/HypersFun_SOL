@@ -92,7 +92,7 @@ export default function ActivityTabs({
   const tradeCount = data?.summary?.totalTrades ?? 0;
 
   return (
-    <div className="border-t border-border bg-black flex flex-col min-h-[280px]">
+    <div className="flex-1 border-t border-border bg-black flex flex-col min-h-[200px] lg:min-h-0 overflow-hidden">
       {/* Tab bar — matches HyperVapor: "Vault:" prefix + tabs */}
       <div className="h-10 border-b border-border flex px-2 md:px-4 items-center gap-2 md:gap-4 shrink-0 overflow-x-auto">
         <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest hidden md:inline">
