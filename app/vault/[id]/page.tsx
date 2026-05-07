@@ -58,6 +58,21 @@ const MarginTradingPanel = dynamic(
   () => import('@/components/bonding-curve-vault/MarginTradingPanel'),
   { ssr: false },
 );
+const ReportPanel = dynamic(
+  () => import('@/components/bonding-curve-vault/ReportPanel'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="animate-spin text-primary" size={28} />
+      </div>
+    ),
+  },
+);
+const ActivityTabs = dynamic(
+  () => import('@/components/bonding-curve-vault/ActivityTabs'),
+  { ssr: false },
+);
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 interface VaultOnChain {
@@ -471,17 +486,23 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
       <main className="flex-1 flex flex-col">
         {activeTab === 'trading' && (
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-px bg-border">
-            {/* Chart */}
-            <div className="bg-[#131722] min-h-[500px] lg:min-h-0">
-              <AdvancedChart
+            {/* Left column: chart + activity tabs */}
+            <div className="flex flex-col min-w-0">
+              <div className="bg-[#131722] h-[500px] lg:h-[560px]">
+                <AdvancedChart
+                  vaultAddress={vault.address}
+                  tokenSymbol={vault.symbol || '???'}
+                  currentPrice={buyPrice}
+                />
+              </div>
+              <ActivityTabs
                 vaultAddress={vault.address}
-                tokenSymbol={vault.symbol || '???'}
-                currentPrice={buyPrice}
+                leaderAddress={vault.leader}
               />
             </div>
 
-            {/* Right rail */}
-            <aside className="bg-card overflow-y-auto max-h-[calc(100vh-260px)] lg:max-h-none">
+            {/* Right rail: full height of left column */}
+            <aside className="bg-card overflow-y-auto max-h-[calc(100vh-200px)]">
               <TradingRail
                 vault={vault}
                 side={side}
@@ -504,9 +525,10 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         )}
 
         {activeTab === 'report' && (
-          <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Section title="Vault Stats">
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-px bg-border">
+          <div className="p-4 space-y-4">
+            {/* Live vault snapshot (on-chain reads) */}
+            <Section title="Vault Snapshot">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px bg-border">
                 <KV label="MCap" value={`$${mcap.toFixed(2)}`} accent="text-white" />
                 <KV label="Assets" value={`$${totalAssets.toFixed(2)}`} accent="text-cyan-400" />
                 <KV label="Supply" value={vault.totalSupply.toFixed(2)} accent="text-white" />
@@ -515,40 +537,13 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
                 <KV label="Buy" value={`$${buyPrice.toFixed(4)}`} accent="text-primary" />
                 <KV label="Sell" value={`$${sellPrice.toFixed(4)}`} accent="text-red-400" />
                 <KV label="Raw NAV" value={`$${rawNav.toFixed(4)}`} accent="text-yellow-400" />
+                <KV label="Perf Fee" value={`${(vault.performanceFeeBps / 100).toFixed(0)}%`} accent="text-white" />
                 <KV label="Status" value={vault.isPaused ? 'Paused' : 'Active'} accent={vault.isPaused ? 'text-rose-400' : 'text-lime-400'} />
               </div>
             </Section>
 
-            {isLeader && (
-              <Section title="Leader Controls">
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <button
-                    onClick={() => handleSetPaused(true)}
-                    disabled={adminBusy || vault.isPaused}
-                    className="py-2 px-3 bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 disabled:opacity-40 text-xs font-bold uppercase tracking-widest"
-                  >
-                    Pause
-                  </button>
-                  <button
-                    onClick={() => handleSetPaused(false)}
-                    disabled={adminBusy || !vault.isPaused}
-                    className="py-2 px-3 bg-lime-500/20 border border-lime-500/40 text-lime-300 hover:bg-lime-500/30 disabled:opacity-40 text-xs font-bold uppercase tracking-widest"
-                  >
-                    Unpause
-                  </button>
-                </div>
-                <div className="border-t border-border pt-3">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Drift Margin Trading
-                  </div>
-                  <MarginTradingPanel
-                    vaultPda={vault.address}
-                    leaderAddress={vault.leader}
-                    usdcReserve={vault.usdcReserve}
-                  />
-                </div>
-              </Section>
-            )}
+            {/* Trading report — driven by /api/vault/report (cached server-side) */}
+            <ReportPanel vaultAddress={vault.address} />
           </div>
         )}
       </main>
