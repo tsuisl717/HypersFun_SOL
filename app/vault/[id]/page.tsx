@@ -94,7 +94,7 @@ interface VaultOnChain {
   links?: VaultLinks;
 }
 
-type Tab = 'trading' | 'report';
+type Tab = 'trading' | 'margin' | 'report';
 
 interface GraduationTier {
   label: string;
@@ -466,6 +466,15 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         <TabButton active={activeTab === 'trading'} onClick={() => setActiveTab('trading')}>
           Trading
         </TabButton>
+        {isLeader && (
+          <TabButton
+            active={activeTab === 'margin'}
+            onClick={() => setActiveTab('margin')}
+            accent="purple"
+          >
+            Drift Margin Trading
+          </TabButton>
+        )}
         <TabButton
           active={activeTab === 'report'}
           onClick={() => setActiveTab('report')}
@@ -521,6 +530,16 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
                 onSubmit={submitTrade}
               />
             </aside>
+          </div>
+        )}
+
+        {activeTab === 'margin' && isLeader && (
+          <div className="h-full p-4">
+            <MarginTradingPanel
+              vaultPda={vault.address}
+              leaderAddress={vault.leader}
+              usdcReserve={vault.usdcReserve}
+            />
           </div>
         )}
 
@@ -1008,10 +1027,14 @@ function TabButton({
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
-  accent?: 'green';
+  accent?: 'green' | 'purple';
 }) {
   const activeColor =
-    accent === 'green' ? 'text-green-400 border-green-400' : 'text-primary border-primary';
+    accent === 'green'
+      ? 'text-green-400 border-green-400'
+      : accent === 'purple'
+      ? 'text-purple-400 border-purple-400'
+      : 'text-primary border-primary';
   return (
     <button
       onClick={onClick}
