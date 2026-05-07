@@ -1,17 +1,25 @@
-'use client';
-
 /**
  * vault-events — fetch real Buy/Sell events from the Solana RPC by parsing
- * Anchor program logs, with incremental localStorage caching so repeat
- * visits only sync new transactions.
+ * Anchor program logs.
  *
- * No subgraph required — works against any Solana RPC.
+ * This module is isomorphic (works on both Node server and browser).
+ * Caching is the caller's responsibility:
+ *   - Server-side: app/api/vault/candles/route.ts keeps an in-memory Map
+ *     keyed by vault address with a 2-minute TTL (mirrors HyperVapor's
+ *     subgraph candlesCache).
+ *   - Client-side: optional, currently unused — the API route's response
+ *     headers carry HTTP cache control instead.
+ *
+ * Uses connection.getTransactions (batched JSON-RPC) so one HTTP call
+ * carries N method invocations — friendlier on rate-limited public RPCs.
  */
 
 import { Connection, PublicKey, ConfirmedSignatureInfo } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
-import { EventParser } from '@coral-xyz/anchor';
 import type { OHLCV } from '@/lib/indicators';
+
+const DEBUG = process.env.NODE_ENV !== 'production';
+const dlog = (...args: unknown[]) => { if (DEBUG) console.log('[vault-events]', ...args); };
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export type TradeSide = 'buy' | 'sell';
@@ -21,114 +29,14 @@ export interface VaultTrade {
   side: TradeSide;
   user: string;
   timestamp: number;       // unix seconds
-  usdc: number;            // human USDC (gross — for buy: usdc_in, for sell: usdc_out)
+  usdc: number;            // human USDC (gross — buy: usdc_in, sell: usdc_out)
   tokens: number;          // human vault tokens
-  price: number;           // USDC per token
-  nav: number;             // reported NAV at time of trade
+  price: number;           // chart price = NAV at trade time (USDC per token)
+  navRaw: number;          // same as price; kept for clarity
   slot: number;
 }
 
-interface CacheShape {
-  trades: VaultTrade[];      // sorted ascending by timestamp
-  latestSig?: string;        // most recent signature seen (for incremental sync)
-}
-
-// ─── localStorage cache ─────────────────────────────────────────────────────
-const CACHE_PREFIX = 'hypersfun:vault-trades:';
-const MAX_CACHED_TRADES = 5000;
-
-function cacheKey(vault: string): string {
-  return CACHE_PREFIX + vault;
-}
-
-function readCache(vault: string): CacheShape {
-  if (typeof window === 'undefined') return { trades: [] };
-  try {
-    const raw = localStorage.getItem(cacheKey(vault));
-    if (!raw) return { trades: [] };
-    const parsed = JSON.parse(raw) as CacheShape;
-    return Array.isArray(parsed.trades) ? parsed : { trades: [] };
-  } catch {
-    return { trades: [] };
-  }
-}
-
-function writeCache(vault: string, cache: CacheShape): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const trimmed: CacheShape = {
-      ...cache,
-      trades: cache.trades.length > MAX_CACHED_TRADES
-        ? cache.trades.slice(-MAX_CACHED_TRADES)
-        : cache.trades,
-    };
-    localStorage.setItem(cacheKey(vault), JSON.stringify(trimmed));
-  } catch {
-    // quota → drop oldest half and retry once
-    try {
-      const halved: CacheShape = {
-        ...cache,
-        trades: cache.trades.slice(-Math.floor(cache.trades.length / 2)),
-      };
-      localStorage.setItem(cacheKey(vault), JSON.stringify(halved));
-    } catch { /* give up */ }
-  }
-}
-
-export function clearVaultTradesCache(vault?: string): void {
-  if (typeof window === 'undefined') return;
-  if (vault) {
-    localStorage.removeItem(cacheKey(vault));
-    return;
-  }
-  // wipe all
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const k = localStorage.key(i);
-    if (k && k.startsWith(CACHE_PREFIX)) localStorage.removeItem(k);
-  }
-}
-
-// ─── Concurrency helper ─────────────────────────────────────────────────────
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let cursor = 0;
-
-  async function worker() {
-    while (true) {
-      const i = cursor++;
-      if (i >= items.length) return;
-      out[i] = await fn(items[i], i);
-    }
-  }
-
-  const workers: Promise<void>[] = [];
-  for (let i = 0; i < Math.min(concurrency, items.length); i++) {
-    workers.push(worker());
-  }
-  await Promise.all(workers);
-  return out;
-}
-
-// ─── Event parsing ──────────────────────────────────────────────────────────
-function parseEventsFromLogs(
-  parser: EventParser,
-  logs: string[],
-): Array<{ name: string; data: Record<string, unknown> }> {
-  const out: Array<{ name: string; data: Record<string, unknown> }> = [];
-  try {
-    for (const ev of parser.parseLogs(logs, false)) {
-      out.push({ name: ev.name, data: ev.data as Record<string, unknown> });
-    }
-  } catch {
-    // ignore — some logs may not decode cleanly
-  }
-  return out;
-}
-
+// ─── Helpers ────────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function bnToNumber(v: any): number {
   if (v == null) return 0;
@@ -156,129 +64,142 @@ function eventToTrade(
   if (ev.name === 'BuyEvent') {
     const usdc = bnToNumber(d.usdcIn ?? d.usdc_in) / 1e6;
     const tokens = bnToNumber(d.tokensOut ?? d.tokens_out) / 1e6;
-    if (usdc <= 0 || tokens <= 0) return null;
-    return {
-      signature: sig,
-      side: 'buy',
-      user,
-      timestamp,
-      usdc,
-      tokens,
-      price: usdc / tokens,
-      nav,
-      slot,
-    };
+    if (usdc <= 0 || tokens <= 0 || nav <= 0) return null;
+    return { signature: sig, side: 'buy', user, timestamp, usdc, tokens, price: nav, navRaw: nav, slot };
   }
   if (ev.name === 'SellEvent') {
     const usdc = bnToNumber(d.usdcOut ?? d.usdc_out) / 1e6;
     const tokens = bnToNumber(d.tokensIn ?? d.tokens_in) / 1e6;
-    if (usdc <= 0 || tokens <= 0) return null;
-    return {
-      signature: sig,
-      side: 'sell',
-      user,
-      timestamp,
-      usdc,
-      tokens,
-      price: usdc / tokens,
-      nav,
-      slot,
-    };
+    if (usdc <= 0 || tokens <= 0 || nav <= 0) return null;
+    return { signature: sig, side: 'sell', user, timestamp, usdc, tokens, price: nav, navRaw: nav, slot };
   }
   return null;
 }
 
-// ─── Public: load trades (cached + incremental sync) ────────────────────────
-export interface LoadTradesOptions {
-  /** Max signatures to scan in one go. Default 500. */
+// ─── Public: fetch new trades since a given signature ───────────────────────
+export interface FetchTradesOptions {
+  /** Max signatures to scan in one go. Default 300. */
   signatureLimit?: number;
-  /** Concurrent transaction fetches. Default 5. */
-  concurrency?: number;
-  /** If true, ignore cache and rebuild from scratch. */
-  forceRefresh?: boolean;
+  /** Cursor — only fetch signatures newer than this one. */
+  since?: string;
 }
 
-export async function loadVaultTrades(
+export interface FetchTradesResult {
+  trades: VaultTrade[];
+  /** Newest signature observed in this fetch (use as `since` next time). */
+  latestSig: string | null;
+}
+
+/**
+ * Returns trades NEWER than `options.since`. Caller is responsible for
+ * merging with any existing cache.
+ */
+export async function fetchVaultTrades(
   connection: Connection,
   program: anchor.Program,
   vault: PublicKey,
-  options: LoadTradesOptions = {},
-): Promise<VaultTrade[]> {
-  const {
-    signatureLimit = 500,
-    concurrency = 5,
-    forceRefresh = false,
-  } = options;
-
+  options: FetchTradesOptions = {},
+): Promise<FetchTradesResult> {
+  const { signatureLimit = 300, since } = options;
   const vaultStr = vault.toBase58();
-  const cache = forceRefresh ? { trades: [] } : readCache(vaultStr);
 
-  // 1. List signatures touching this vault, only NEWER than what we've cached.
+  // 1. List signatures touching this vault, only NEWER than the cursor.
   const sigParams: { limit: number; until?: string } = { limit: signatureLimit };
-  if (cache.latestSig) sigParams.until = cache.latestSig;
+  if (since) sigParams.until = since;
 
   let sigs: ConfirmedSignatureInfo[];
   try {
     sigs = await connection.getSignaturesForAddress(vault, sigParams);
+    dlog(
+      `getSignaturesForAddress(${vaultStr.slice(0, 8)}…) -> ${sigs.length} sigs`,
+      since ? `(since ${since.slice(0, 8)}…)` : '(initial scan)',
+    );
   } catch (e) {
-    console.warn('[vault-events] getSignaturesForAddress failed:', e);
-    return cache.trades;
+    // If `until` is set but pruned, retry without it.
+    if (sigParams.until) {
+      try {
+        sigs = await connection.getSignaturesForAddress(vault, { limit: signatureLimit });
+        dlog(`retry without until -> ${sigs.length} sigs`);
+      } catch (e2) {
+        console.warn('[vault-events] getSignaturesForAddress failed:', e2);
+        return { trades: [], latestSig: null };
+      }
+    } else {
+      console.warn('[vault-events] getSignaturesForAddress failed:', e);
+      return { trades: [], latestSig: null };
+    }
   }
 
   if (sigs.length === 0) {
-    return cache.trades;
+    return { trades: [], latestSig: null };
   }
 
-  // 2. Set up the event parser
-  const parser = new EventParser(program.programId, program.coder);
+  // 2. Batch-fetch transactions. `getTransactions` sends a single JSON-RPC
+  //    batch instead of N parallel HTTP calls — much friendlier on devnet's
+  //    public rate limit. We still chunk to keep batch size reasonable.
+  const parser = new anchor.EventParser(program.programId, program.coder);
+  const sigStrings = sigs.map((s) => s.signature);
 
-  // 3. Pull each transaction, parse logs, decode events into trades
-  type FetchResult = VaultTrade[];
-  const fetched = await mapWithConcurrency<ConfirmedSignatureInfo, FetchResult>(
-    sigs,
-    concurrency,
-    async (s) => {
-      try {
-        const tx = await connection.getTransaction(s.signature, {
-          commitment: 'confirmed',
-          maxSupportedTransactionVersion: 0,
-        });
-        const logs = tx?.meta?.logMessages ?? [];
-        if (logs.length === 0) return [];
-        const slot = tx?.slot ?? 0;
-        const events = parseEventsFromLogs(parser, logs);
-        const trades: VaultTrade[] = [];
-        for (const ev of events) {
-          const t = eventToTrade(ev, s.signature, slot);
-          if (t) trades.push(t);
-        }
-        return trades;
-      } catch {
-        return [];
+  const BATCH_SIZE = 25;
+  const trades: VaultTrade[] = [];
+  let txOk = 0, txMissing = 0, txWithEvents = 0, totalEvents = 0;
+
+  for (let i = 0; i < sigStrings.length; i += BATCH_SIZE) {
+    const chunk = sigStrings.slice(i, i + BATCH_SIZE);
+    let txs: Awaited<ReturnType<Connection['getTransactions']>> = [];
+    try {
+      txs = await connection.getTransactions(chunk, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+    } catch (e) {
+      console.warn('[vault-events] getTransactions chunk failed, skipping', e);
+      continue;
+    }
+
+    for (let j = 0; j < txs.length; j++) {
+      const tx = txs[j];
+      const sig = chunk[j];
+      if (!tx) { txMissing++; continue; }
+      txOk++;
+      const logs = tx.meta?.logMessages ?? [];
+      if (logs.length === 0) continue;
+      const slot = tx.slot ?? 0;
+
+      let foundOne = false;
+      for (const ev of parser.parseLogs(logs, false)) {
+        if (ev.name !== 'BuyEvent' && ev.name !== 'SellEvent') continue;
+        const trade = eventToTrade(
+          { name: ev.name, data: ev.data as Record<string, unknown> },
+          sig,
+          slot,
+        );
+        if (trade) { trades.push(trade); totalEvents++; foundOne = true; }
       }
-    },
+      if (foundOne) txWithEvents++;
+    }
+
+    if (i + BATCH_SIZE < sigStrings.length) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  dlog(
+    `fetched ${txOk}/${sigs.length} txs · ${txWithEvents} had events · ${totalEvents} events`,
+    txMissing > 0 ? `(${txMissing} missing — RPC pruned?)` : '',
   );
 
-  // 4. Flatten + sort by timestamp ascending
-  const newTrades = fetched.flat().sort((a, b) => a.timestamp - b.timestamp);
-
-  // 5. Merge with cache, dedupe by signature+side
-  const merged = mergeTrades(cache.trades, newTrades);
-
-  // 6. Newest signature for next incremental sync
-  // Note: sigs[0] is the most recent (RPC returns desc by slot)
-  const latestSig = sigs[0]?.signature ?? cache.latestSig;
-
-  writeCache(vaultStr, { trades: merged, latestSig });
-  return merged;
+  trades.sort((a, b) => a.timestamp - b.timestamp);
+  return { trades, latestSig: sigs[0]?.signature ?? null };
 }
 
-function mergeTrades(a: VaultTrade[], b: VaultTrade[]): VaultTrade[] {
+// ─── Public: merge two trade lists (dedupe) ─────────────────────────────────
+export function mergeTrades(a: VaultTrade[], b: VaultTrade[]): VaultTrade[] {
   if (b.length === 0) return a;
+  if (a.length === 0) return b.slice().sort((x, y) => x.timestamp - y.timestamp);
   const seen = new Set<string>();
   const out: VaultTrade[] = [];
   for (const t of [...a, ...b]) {
-    // dedupe key — multiple events can share a signature, so include side
     const key = `${t.signature}:${t.side}:${t.timestamp}:${t.user}:${t.usdc}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -306,10 +227,7 @@ export function buildCandlesFromTrades(
   const sortedBuckets = Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]);
 
   const candles: OHLCV[] = [];
-  let prevClose = 0;
-
   for (const [bucket, { trades: ts }] of sortedBuckets) {
-    // Trades are inserted in scan order which is ascending after merge.
     const open = ts[0].price;
     const close = ts[ts.length - 1].price;
     let high = open, low = open;
@@ -320,11 +238,9 @@ export function buildCandlesFromTrades(
       volume += t.usdc;
     }
     candles.push({ time: bucket, open, high, low, close, volume });
-    prevClose = close;
   }
 
-  // Forward-fill empty buckets between the first and last bucket so the chart
-  // doesn't have holes when there's no trading activity for a while.
+  // Forward-fill empty buckets between first and last.
   if (candles.length > 1) {
     const filled: OHLCV[] = [];
     for (let i = 0; i < candles.length - 1; i++) {
@@ -337,10 +253,7 @@ export function buildCandlesFromTrades(
           const t = cur.time + g * intervalSecs;
           filled.push({
             time: t,
-            open: cur.close,
-            high: cur.close,
-            low: cur.close,
-            close: cur.close,
+            open: cur.close, high: cur.close, low: cur.close, close: cur.close,
             volume: 0,
           });
         }
@@ -350,7 +263,20 @@ export function buildCandlesFromTrades(
     return filled;
   }
 
-  // suppress unused warning for prevClose tracker (kept for potential future use)
-  void prevClose;
   return candles;
+}
+
+// ─── Interval helpers ───────────────────────────────────────────────────────
+export const SUPPORTED_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+export type Interval = (typeof SUPPORTED_INTERVALS)[number];
+
+export function intervalToSeconds(interval: Interval): number {
+  switch (interval) {
+    case '1m':  return 60;
+    case '5m':  return 300;
+    case '15m': return 900;
+    case '1h':  return 3600;
+    case '4h':  return 14400;
+    case '1d':  return 86400;
+  }
 }

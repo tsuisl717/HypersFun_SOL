@@ -4,19 +4,16 @@
  * AdvancedChart — candlestick / line / area price chart with technical
  * indicator overlays (MA7, MA25, EMA12, EMA26, Bollinger Bands).
  *
- * Data source: real Buy/Sell events read from the Solana RPC by parsing
- * Anchor program logs. Trades are cached in localStorage and synced
- * incrementally so repeat visits only fetch new transactions.
+ * Data source: GET /api/vault/candles?vault=<pk>&interval=<...>&limit=<N>
+ * (Next.js API route that scans on-chain BuyEvent/SellEvent server-side
+ *  and caches in memory for 2 minutes — same shape as HyperVapor's
+ *  TheGraph subgraph candlesCache.)
+ *
+ * Client-side cache is intentionally minimal — the API route already
+ * dedupes work across all tabs with its server-side cache.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import {
-  PublicKey,
-  Transaction,
-  VersionedTransaction,
-} from '@solana/web3.js';
-import * as anchor from '@coral-xyz/anchor';
 import {
   createChart,
   IChartApi,
@@ -30,12 +27,6 @@ import {
 } from 'lightweight-charts';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-import { getProgram } from '@/lib/contracts/margin';
-import {
-  loadVaultTrades,
-  buildCandlesFromTrades,
-  type VaultTrade,
-} from '@/lib/vault-events';
 import {
   calculateSMA,
   calculateEMA,
@@ -50,7 +41,15 @@ type ChartKind = 'candle' | 'line' | 'area';
 interface AdvancedChartProps {
   vaultAddress: string;
   tokenSymbol?: string;
-  currentPrice?: number;       // current spot price (USDC) — used for live last-candle update
+  currentPrice?: number;       // current spot price — used to extend live candle
+}
+
+interface CandlesResponse {
+  vault: string;
+  interval: Interval;
+  tradeCount: number;
+  candles: OHLCV[];
+  lastSync: number;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -78,9 +77,6 @@ export default function AdvancedChart({
   tokenSymbol = 'TOKEN',
   currentPrice,
 }: AdvancedChartProps) {
-  const { connection } = useConnection();
-  const { publicKey, signTransaction, signAllTransactions } = useWallet();
-
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<
@@ -98,107 +94,90 @@ export default function AdvancedChart({
     bb: false,
   });
 
-  // Trade data state
-  const [trades, setTrades] = useState<VaultTrade[]>([]);
+  const [serverCandles, setServerCandles] = useState<OHLCV[]>([]);
+  const [tradeCount, setTradeCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // ─── Read-only Anchor provider (works even without connected wallet) ──
-  const getReadProvider = useCallback((): anchor.AnchorProvider => {
-    if (publicKey && signTransaction && signAllTransactions) {
-      return new anchor.AnchorProvider(
-        connection,
-        { publicKey, signTransaction, signAllTransactions },
-        { commitment: 'confirmed' },
+  const inFlightRef = useRef(false);
+
+  // ─── Fetch candles from API ────────────────────────────────────────────
+  const loadCandles = useCallback(async () => {
+    if (!vaultAddress) return;
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      const res = await fetch(
+        `/api/vault/candles?vault=${vaultAddress}&interval=${interval}&limit=300`,
+        { cache: 'no-store' },
       );
-    }
-    return new anchor.AnchorProvider(
-      connection,
-      {
-        publicKey: PublicKey.default,
-        signTransaction: async <T extends Transaction | VersionedTransaction>(tx: T) => tx,
-        signAllTransactions: async <T extends Transaction | VersionedTransaction>(txs: T[]) => txs,
-      },
-      { commitment: 'confirmed' },
-    );
-  }, [connection, publicKey, signTransaction, signAllTransactions]);
-
-  // ─── Load trades (cached + incremental sync) ──────────────────────────
-  const syncTrades = useCallback(
-    async (forceRefresh = false) => {
-      if (!vaultAddress) return;
-      setSyncing(true);
-      setSyncError(null);
-      try {
-        const program = getProgram(getReadProvider());
-        const fetched = await loadVaultTrades(
-          connection,
-          program,
-          new PublicKey(vaultAddress),
-          { signatureLimit: 500, concurrency: 5, forceRefresh },
-        );
-        setTrades(fetched);
-      } catch (e) {
-        console.error('[AdvancedChart] sync error:', e);
-        setSyncError(e instanceof Error ? e.message.slice(0, 120) : 'sync failed');
-      } finally {
-        setLoading(false);
-        setSyncing(false);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
       }
-    },
-    [vaultAddress, connection, getReadProvider],
-  );
+      const data = (await res.json()) as CandlesResponse;
+      setServerCandles(data.candles);
+      setTradeCount(data.tradeCount);
+      console.log(
+        `[AdvancedChart] candles [${interval}] ${data.candles.length} candles · ${data.tradeCount} trades`,
+        data.candles,
+      );
+    } catch (e) {
+      console.error('[AdvancedChart] load error:', e);
+      setSyncError(e instanceof Error ? e.message.slice(0, 140) : 'load failed');
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+      inFlightRef.current = false;
+    }
+  }, [vaultAddress, interval]);
 
-  useEffect(() => { syncTrades(false); }, [syncTrades]);
+  // refetch when vault or interval changes
+  useEffect(() => { loadCandles(); }, [loadCandles]);
 
-  // ─── Build candle series from real trades ─────────────────────────────
+  // ─── Append a "live bucket" candle from currentPrice ───────────────────
   const candles = useMemo<OHLCV[]>(() => {
     const intervalSecs = INTERVAL_OPTIONS.find((o) => o.value === interval)!.secs;
-    const base = buildCandlesFromTrades(trades, intervalSecs);
+    if (!currentPrice || currentPrice <= 0) return serverCandles;
 
-    // Append a live "current bucket" candle using currentPrice if it's
-    // beyond the last trade bucket — gives the chart a moving last candle
-    // even between trades.
-    if (currentPrice && currentPrice > 0) {
-      const now = Math.floor(Date.now() / 1000);
-      const liveBucket = Math.floor(now / intervalSecs) * intervalSecs;
-      const last = base[base.length - 1];
+    const now = Math.floor(Date.now() / 1000);
+    const liveBucket = Math.floor(now / intervalSecs) * intervalSecs;
+    const last = serverCandles[serverCandles.length - 1];
 
-      if (!last) {
-        return [{
-          time: liveBucket,
-          open: currentPrice, high: currentPrice, low: currentPrice, close: currentPrice,
-          volume: 0,
-        }];
-      }
-      if (liveBucket > last.time) {
-        return [
-          ...base,
-          {
-            time: liveBucket,
-            open: last.close,
-            high: Math.max(last.close, currentPrice),
-            low: Math.min(last.close, currentPrice),
-            close: currentPrice,
-            volume: 0,
-          },
-        ];
-      }
-      // Same bucket as last candle — extend it with the live price
+    if (!last) {
+      return [{
+        time: liveBucket,
+        open: currentPrice, high: currentPrice, low: currentPrice, close: currentPrice,
+        volume: 0,
+      }];
+    }
+    if (liveBucket > last.time) {
       return [
-        ...base.slice(0, -1),
+        ...serverCandles,
         {
-          ...last,
-          high: Math.max(last.high, currentPrice),
-          low: Math.min(last.low, currentPrice),
+          time: liveBucket,
+          open: last.close,
+          high: Math.max(last.close, currentPrice),
+          low: Math.min(last.close, currentPrice),
           close: currentPrice,
+          volume: 0,
         },
       ];
     }
-
-    return base;
-  }, [trades, interval, currentPrice]);
+    // same bucket → extend last candle live
+    return [
+      ...serverCandles.slice(0, -1),
+      {
+        ...last,
+        high: Math.max(last.high, currentPrice),
+        low: Math.min(last.low, currentPrice),
+        close: currentPrice,
+      },
+    ];
+  }, [serverCandles, interval, currentPrice]);
 
   const lastPrice = candles.length > 0 ? candles[candles.length - 1].close : currentPrice ?? 0;
   const priceChange = useMemo(() => {
@@ -208,7 +187,7 @@ export default function AdvancedChart({
     return ((lastPrice - first) / first) * 100;
   }, [candles, lastPrice]);
 
-  // ─── Chart lifecycle: create once ─────────────────────────────────────
+  // ─── Chart lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
     if (chartRef.current) return;
@@ -253,7 +232,7 @@ export default function AdvancedChart({
     };
   }, []);
 
-  // ─── (Re-)create main series when chart kind changes ──────────────────
+  // (Re-)create main series on chartKind change
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -290,7 +269,7 @@ export default function AdvancedChart({
     }
   }, [chartKind]);
 
-  // ─── Push candle data ────────────────────────────────────────────────
+  // Push candle data into the chart
   useEffect(() => {
     const chart = chartRef.current;
     const series = mainSeriesRef.current;
@@ -312,7 +291,7 @@ export default function AdvancedChart({
     chart.timeScale().fitContent();
   }, [candles, chartKind]);
 
-  // ─── Indicator overlays ──────────────────────────────────────────────
+  // Indicator overlays
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || candles.length === 0) return;
@@ -365,7 +344,7 @@ export default function AdvancedChart({
   // ─── Render ──────────────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col bg-[#131722]">
-      {/* Header: pair + price + chart-type + interval */}
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <span className="text-sm font-bold uppercase tracking-wider text-white shrink-0">
@@ -396,12 +375,11 @@ export default function AdvancedChart({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Manual resync */}
           <button
-            onClick={() => syncTrades(false)}
+            onClick={() => loadCandles()}
             disabled={syncing}
             className="p-1 text-gray-400 hover:text-primary disabled:opacity-40 cursor-pointer"
-            title="Sync new trades"
+            title="Refresh"
           >
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
           </button>
@@ -466,25 +444,25 @@ export default function AdvancedChart({
         })}
       </div>
 
-      {/* Chart canvas (with overlay states) */}
+      {/* Chart canvas */}
       <div className="flex-1 min-h-0 relative">
         <div ref={containerRef} className="absolute inset-0" />
-        {loading && trades.length === 0 && (
+        {loading && serverCandles.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center bg-[#131722]/70 z-10">
             <div className="flex items-center gap-2 text-gray-400 text-xs font-mono">
               <Loader2 size={14} className="animate-spin" />
-              Loading trades from chain…
+              Loading candles…
             </div>
           </div>
         )}
-        {!loading && trades.length === 0 && !syncError && (
+        {!loading && tradeCount === 0 && !syncError && (
           <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs font-mono">
             No trades yet on this vault.
           </div>
         )}
         {syncError && (
           <div className="absolute top-2 left-2 right-2 px-2 py-1 bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-mono">
-            Sync error: {syncError}
+            Load error: {syncError}
           </div>
         )}
       </div>
@@ -492,9 +470,9 @@ export default function AdvancedChart({
       {/* Footer */}
       <div className="px-3 py-1 border-t border-gray-700/50 text-[9px] font-mono text-gray-600 flex items-center justify-between">
         <span>
-          {trades.length > 0
-            ? `${trades.length} on-chain trade${trades.length === 1 ? '' : 's'} · cached locally`
-            : 'No trades — chart will populate once buys/sells occur'}
+          {tradeCount > 0
+            ? `${tradeCount} on-chain trade${tradeCount === 1 ? '' : 's'} · server-cached 2 min`
+            : 'No trades yet'}
         </span>
         <span>
           {candles.length} candle{candles.length === 1 ? '' : 's'} · {interval}
