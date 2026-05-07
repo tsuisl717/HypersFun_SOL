@@ -2,7 +2,9 @@
 
 HypersFun lets traders launch onchain funds in a single click and lets investors copy those funds transparently in real time. Funds are tokenized, NAV-anchored, and fully non-custodial — settled through Anchor programs on Solana with Drift Protocol providing the perpetuals venue.
 
-Live site: <https://hypers.fun>
+Live site: <https://sol.hypers.fun/>
+
+> ⚠️ **Solana Devnet only.** HypersFun currently runs exclusively on **Solana Devnet**. Make sure your wallet (Phantom / Solflare / etc.) is switched to **Devnet** before connecting — connecting on Mainnet will not work. Use the in-app [/faucet](https://sol.hypers.fun/faucet) page to get test SOL and USDC.
 
 ## Features
 
@@ -51,7 +53,7 @@ Key contract config lives in [lib/contracts/config.ts](lib/contracts/config.ts) 
 
 ## Run Locally
 
-**Prerequisites:** Node.js 18.18+ and a Solana wallet (Phantom recommended).
+**Prerequisites:** Node.js 18.18+ and a Solana wallet (Phantom recommended) **set to Solana Devnet**.
 
 1. Install dependencies:
    ```bash
@@ -62,7 +64,7 @@ Key contract config lives in [lib/contracts/config.ts](lib/contracts/config.ts) 
    ```bash
    npm run dev
    ```
-4. Open <http://localhost:3000> and connect a wallet. On devnet, grab test USDC from the [/faucet](http://localhost:3000/faucet) page.
+4. Open <http://localhost:3000>, switch your wallet to **Solana Devnet**, then connect. Grab test SOL/USDC from the [/faucet](http://localhost:3000/faucet) page before launching or buying into a vault.
 
 ### Scripts
 
@@ -77,16 +79,15 @@ Key contract config lives in [lib/contracts/config.ts](lib/contracts/config.ts) 
 
 Create a `.env.local` file (it is git-ignored). All `NEXT_PUBLIC_*` values are exposed to the browser.
 
-| Variable                       | Description                                                              |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SOLANA_NETWORK`   | `devnet` (default) or `mainnet-beta`                                     |
-| `NEXT_PUBLIC_RPC_URL`          | Solana RPC endpoint (required on mainnet)                                |
-| `NEXT_PUBLIC_WS_URL`           | Solana WebSocket endpoint (mainnet)                                      |
-| `NEXT_PUBLIC_PROGRAM_ID`       | HypersFun program ID on mainnet                                          |
-| `NEXT_PUBLIC_FACTORY_PDA`      | Factory PDA on mainnet                                                   |
-| `PINATA_JWT`                   | Pinata JWT used by the `/api/pinata/upload` route to pin fund metadata   |
+> HypersFun is **Devnet-only** for now — the Devnet program ID, factory PDA, USDC mint, and Drift addresses are all hard-coded in [lib/contracts/config.ts](lib/contracts/config.ts), so you don't need any env vars to try the app out on Devnet.
 
-Devnet program/factory/USDC addresses are hard-coded in [lib/contracts/config.ts](lib/contracts/config.ts) — no env vars required to try things out on devnet.
+| Variable                       | Required | Description                                                                          |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SOLANA_NETWORK`   | No       | Must stay as `devnet` (the default). HypersFun does not support Mainnet yet.         |
+| `NEXT_PUBLIC_RPC_URL`          | No       | Override the default Devnet RPC (`https://api.devnet.solana.com`) with your own.     |
+| `PINATA_JWT`                   | Yes\*    | Pinata JWT used by `/api/pinata/upload` to pin fund metadata + images to IPFS.       |
+
+<sub>\* Only required if you launch new vaults locally. Browsing existing vaults works without it.</sub>
 
 ## How It Works
 
@@ -97,7 +98,7 @@ Devnet program/factory/USDC addresses are hard-coded in [lib/contracts/config.ts
 
 ## Deployment
 
-The app is built for Vercel-style platforms. Set the environment variables above in your host, point `NEXT_PUBLIC_SOLANA_NETWORK` to `mainnet-beta`, and run `npm run build`.
+The app is built for Vercel-style platforms. Set the environment variables above in your host, keep `NEXT_PUBLIC_SOLANA_NETWORK=devnet` (HypersFun is Devnet-only for now), and run `npm run build`.
 
 ## License
 
