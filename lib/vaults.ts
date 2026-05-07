@@ -1,20 +1,9 @@
+'use client';
+
 import { Connection, PublicKey } from '@solana/web3.js';
-import { getAccount } from '@solana/spl-token';
-import { SOLANA_CONFIG } from '@/lib/contracts/config';
-import {
-  loadAllVaults as loadOnChainVaults,
-  fetchVaultState,
-  fetchVaultById,
-  type VaultStateData,
-} from '@/lib/contracts/program';
-
-const connection = new Connection(SOLANA_CONFIG.rpcUrl, 'confirmed');
-
-export interface VaultPosition {
-  coin: string;
-  size: number;
-  isLong: boolean;
-}
+import * as anchor from '@coral-xyz/anchor';
+import { CONFIG, PROGRAM_ID, PRECISION } from './contracts/config';
+import { getProgram } from './contracts/margin';
 
 export interface VaultLinks {
   website?: string;
@@ -23,226 +12,151 @@ export interface VaultLinks {
 }
 
 export interface VaultInfo {
-  core: string;          // Solana program account pubkey
-  trading: string;       // Solana trading wallet pubkey
-  leader: string;        // Solana leader wallet pubkey
+  address: string;
+  leader: string;
   name: string;
   symbol: string;
+  metadataUri: string;
+  tokenMint: string;
+  usdcReserve: number;
+  totalSupply: number;
+  totalVolume: number;
+  externalAssets: number;
   performanceFeeBps: number;
-  createdAt: number;
-  verified: boolean;
   nav: string;
-  totalSupply: string;
   buyPrice: string;
-  metadataURI: string;
-  imageUrl: string;
-  description: string;
-  links: VaultLinks;
-  totalVolume: string;
+  sellPrice: string;
   tvl: string;
-  priceChange24h: number;
-  priceChange: number;
-  positions?: VaultPosition[];
-  winRate?: number;
-  apy?: number;
+  isPaused: boolean;
+  // Hydrated from metadataUri JSON (populated by hydrateMetadata)
+  imageUrl?: string;
+  description?: string;
+  links?: VaultLinks;
 }
 
-export type VaultUpdateCallback = (coreAddress: string, updates: Partial<VaultInfo>) => void;
+export type VaultUpdateCallback = (address: string, updates: Partial<VaultInfo>) => void;
 
-const VAULTS_CACHE_KEY = 'vaults_cache';
-const VAULTS_CACHE_TTL = 2 * 60 * 1000;
-
-interface VaultsCache {
-  data: VaultInfo[];
-  timestamp: number;
+function getConnection(): Connection {
+  return new Connection(CONFIG.rpcUrl, 'confirmed');
 }
 
-export function getCachedVaults(): VaultInfo[] | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const cached = sessionStorage.getItem(VAULTS_CACHE_KEY);
-    if (!cached) return null;
-    const { data, timestamp }: VaultsCache = JSON.parse(cached);
-    if (Date.now() - timestamp < VAULTS_CACHE_TTL) return data;
-    return null;
-  } catch {
-    return null;
-  }
+// Anchor discriminator for "account:Vault"
+const VAULT_DISCRIMINATOR = Buffer.from([211, 8, 232, 43, 2, 152, 117, 119]);
+
+export function calcBuyPrice(
+  virtualBase: number,
+  virtualTokens: number,
+  usdcIn: number
+): { tokensOut: number; price: number } {
+  const tokensOut = (virtualTokens * usdcIn) / (virtualBase + usdcIn);
+  const price = tokensOut > 0 ? usdcIn / tokensOut : 0;
+  return { tokensOut, price };
 }
 
-function setCachedVaults(data: VaultInfo[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    sessionStorage.setItem(VAULTS_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch {
-    // ignore
-  }
+export function calcSellPrice(
+  virtualBase: number,
+  virtualTokens: number,
+  tokensIn: number
+): number {
+  return (virtualBase * tokensIn) / (virtualTokens + tokensIn);
 }
 
-function updateCachedVault(coreAddress: string, updates: Partial<VaultInfo>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const cached = sessionStorage.getItem(VAULTS_CACHE_KEY);
-    if (!cached) return;
-    const parsed: VaultsCache = JSON.parse(cached);
-    const idx = parsed.data.findIndex(v => v.core === coreAddress);
-    if (idx === -1) return;
-    parsed.data[idx] = { ...parsed.data[idx], ...updates };
-    sessionStorage.setItem(VAULTS_CACHE_KEY, JSON.stringify(parsed));
-  } catch {
-    // ignore
-  }
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseVault(address: string, raw: any): VaultInfo {
+  const usdcReserve    = raw.usdcReserve.toNumber()    / 1_000_000;
+  const externalAssets = raw.externalAssets.toNumber() / 1_000_000;
+  const totalSupply    = raw.totalSupply.toNumber()    / 1_000_000;
+  const tvlNum         = usdcReserve + externalAssets;
 
-// ─── On-chain → UI converter ─────────────────────────────────────────────────
+  const navNum = totalSupply > 0 ? tvlNum / totalSupply : 1;
 
-const PRECISION = 1_000_000_000n; // matches contract's 9-dec internal precision
-
-/**
- * Convert raw VaultStateData into the UI-shaped VaultInfo (and fetch the
- * USDC ATA balance to compute TVL).
- */
-async function toVaultInfo(v: VaultStateData): Promise<VaultInfo> {
-  // ── Fetch USDC vault balance for TVL ──
-  let tvlUsdc = 0;
-  try {
-    if (!v.usdcVault.equals(PublicKey.default)) {
-      const acc = await getAccount(connection, v.usdcVault);
-      tvlUsdc = Number(acc.amount) / 1_000_000; // USDC has 6 decimals
-    }
-  } catch { /* ATA might not exist yet — pre-init_vault_assets */ }
-
-  // ── NAV (smoothed): twap_nav is in 9-dec internal units ──
-  const navInternal = v.twapNav > 0n ? v.twapNav : PRECISION;
-  const navStr = (Number(navInternal) / Number(PRECISION)).toFixed(4);
+  const vBase = PRECISION * navNum;
+  const vTok  = PRECISION;
+  const { price: buyPrice } = calcBuyPrice(vBase, vTok, 1);
+  const sellPrice = calcSellPrice(vBase, vTok, 1);
 
   return {
-    core:               v.pubkey.toBase58(),
-    trading:            v.tradingState.toBase58(),
-    leader:             v.leader.toBase58(),
-    name:               v.name,
-    symbol:             v.symbol,
-    performanceFeeBps:  Number(v.feeBps),
-    createdAt:          v.createdAt,
-    verified:           v.verified,
-    nav:                navStr,
-    totalSupply:        '0',                 // TODO: read vault_mint.supply
-    buyPrice:           navStr,
-    metadataURI:        v.metadataUri,
-    imageUrl:           '',
-    description:        '',
-    links:              {},
-    totalVolume:        (Number(v.totalVolume) / Number(PRECISION)).toFixed(2),
-    tvl:                tvlUsdc.toFixed(2),
-    priceChange24h:     0,                   // TODO: derive from TWAP history
-    priceChange:        0,
-    positions:          [],
-    winRate:            0,
-    apy:                0,
+    address,
+    leader:          raw.leader.toBase58(),
+    name:            raw.name,
+    symbol:          raw.symbol,
+    metadataUri:     raw.metadataUri ?? '',
+    tokenMint:       raw.tokenMint.toBase58(),
+    usdcReserve,
+    totalSupply,
+    totalVolume:     0,
+    externalAssets,
+    performanceFeeBps: raw.performanceFeeBps ?? 0,
+    nav:             navNum.toFixed(4),
+    buyPrice:        (1 / buyPrice).toFixed(6),
+    sellPrice:       sellPrice.toFixed(6),
+    tvl:             tvlNum.toFixed(2),
+    isPaused:        raw.isPaused ?? false,
   };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
-
 export async function loadVaults(
   onUpdate?: VaultUpdateCallback,
-  forceRefresh?: boolean,
 ): Promise<VaultInfo[]> {
-  if (!forceRefresh) {
-    const cached = getCachedVaults();
-    if (cached) {
-      console.log('[loadVaults] cache hit:', cached);
-      return cached;
+  try {
+    const connection = getConnection();
+    const provider = new anchor.AnchorProvider(
+      connection,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { publicKey: PublicKey.default } as any,
+      { commitment: 'confirmed' }
+    );
+    const program = getProgram(provider);
+
+    const accounts = await connection.getProgramAccounts(new PublicKey(PROGRAM_ID), {
+      filters: [{ memcmp: { offset: 0, bytes: anchor.utils.bytes.bs58.encode(VAULT_DISCRIMINATOR) } }],
+    });
+
+    const vaults: VaultInfo[] = [];
+    for (const { pubkey } of accounts) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const raw = await (program.account as any).vault.fetch(pubkey);
+        vaults.push(parseVault(pubkey.toBase58(), raw));
+      } catch {
+        // skip accounts that fail to deserialize
+      }
     }
+
+    // Hydrate metadata in background — caller's onUpdate is called per-vault as
+    // each IPFS / data: / http URI resolves.
+    void hydrateMetadata(vaults, onUpdate);
+
+    return vaults;
+  } catch (e) {
+    console.error('loadVaults error:', e);
+    return [];
   }
-  console.log('[loadVaults] fetching from', SOLANA_CONFIG.rpcUrl);
-  const onChain = await loadOnChainVaults(connection);
-  console.log(`[loadVaults] on-chain VaultStateData (${onChain.length}):`,
-    onChain.map(v => ({
-      pubkey:        v.pubkey.toBase58(),
-      vaultId:       v.vaultId.toString(),
-      name:          v.name,
-      symbol:        v.symbol,
-      leader:        v.leader.toBase58(),
-      tradingState:  v.tradingState.toBase58(),
-      vaultMint:     v.vaultMint.toBase58(),
-      usdcVault:     v.usdcVault.toBase58(),
-      feeBps:        v.feeBps.toString(),
-      virtualBase:   v.virtualBase.toString(),
-      virtualTokens: v.virtualTokens.toString(),
-      totalDeposits: v.totalDeposits.toString(),
-      totalVolume:   v.totalVolume.toString(),
-      twapNav:       v.twapNav.toString(),
-      twapNavTime:   v.twapNavTime,
-      paused:        v.paused,
-      verified:      v.verified,
-      createdAt:     v.createdAt,
-      metadataUri:   v.metadataUri,
-    })),
-  );
-
-  const vaults = await Promise.all(onChain.map(toVaultInfo));
-  console.log(`[loadVaults] converted VaultInfo (${vaults.length}):`, vaults);
-  setCachedVaults(vaults);
-
-  // Stream metadata fetches in the background — caller's onUpdate gets
-  // called per-vault as each IPFS / data: / http resolve completes; cache
-  // is updated per-vault so partial progress survives reloads.
-  void hydrateMetadata(vaults, onUpdate);
-
-  return vaults;
 }
 
-async function hydrateMetadata(
-  vaults: VaultInfo[],
-  onUpdate?: VaultUpdateCallback,
-): Promise<void> {
-  const targets = vaults.filter(v => v.metadataURI && !v.imageUrl && !v.description);
-  console.log(`[hydrateMetadata] ${targets.length}/${vaults.length} vaults have metadataURI`);
-  if (targets.length === 0) return;
-
-  await Promise.allSettled(targets.map(async (v) => {
-    console.log(`[hydrateMetadata] fetching ${v.core} → ${v.metadataURI}`);
-    const meta = await parseMetadata(v.metadataURI);
-    console.log(`[hydrateMetadata] ${v.core} parsed:`, meta);
-    const updates: Partial<VaultInfo> = {
-      imageUrl:    meta.imageUrl    || '',
-      description: meta.description || '',
-      links:       meta.links       || {},
-    };
-    Object.assign(v, updates);
-    updateCachedVault(v.core, updates);
-    onUpdate?.(v.core, updates);
-  }));
-}
-
-export async function loadVaultByAddress(coreAddress: string): Promise<VaultInfo | null> {
-  let pubkey: PublicKey;
-  try { pubkey = new PublicKey(coreAddress); } catch { return null; }
-
-  const v = await fetchVaultState(connection, pubkey);
-  if (!v) return null;
-  const info = await toVaultInfo(v);
-  if (info.metadataURI) {
-    const meta = await parseMetadata(info.metadataURI);
-    info.imageUrl    = meta.imageUrl    || '';
-    info.description = meta.description || '';
-    info.links       = meta.links       || {};
+export async function loadVaultByAddress(address: string): Promise<VaultInfo | null> {
+  try {
+    const connection = getConnection();
+    const provider = new anchor.AnchorProvider(
+      connection,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { publicKey: PublicKey.default } as any,
+      { commitment: 'confirmed' }
+    );
+    const program = getProgram(provider);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await (program.account as any).vault.fetch(new PublicKey(address));
+    const info = parseVault(address, raw);
+    if (info.metadataUri) {
+      const meta = await parseMetadata(info.metadataUri);
+      info.imageUrl    = meta.imageUrl;
+      info.description = meta.description;
+      info.links       = meta.links;
+    }
+    return info;
+  } catch {
+    return null;
   }
-  return info;
-}
-
-export async function loadVaultById(vaultId: number | bigint): Promise<VaultInfo | null> {
-  const v = await fetchVaultById(connection, vaultId);
-  if (!v) return null;
-  const info = await toVaultInfo(v);
-  if (info.metadataURI) {
-    const meta = await parseMetadata(info.metadataURI);
-    info.imageUrl    = meta.imageUrl    || '';
-    info.description = meta.description || '';
-    info.links       = meta.links       || {};
-  }
-  return info;
 }
 
 // ─── Metadata helpers ────────────────────────────────────────────────────────
@@ -250,106 +164,72 @@ export async function loadVaultById(vaultId: number | bigint): Promise<VaultInfo
 const PINATA_GW = 'https://cyan-defeated-lemming-99.mypinata.cloud/ipfs/';
 const DATA_JSON_PREFIX = 'data:application/json;base64,';
 
+async function hydrateMetadata(
+  vaults: VaultInfo[],
+  onUpdate?: VaultUpdateCallback,
+): Promise<void> {
+  const targets = vaults.filter(v => v.metadataUri && !v.imageUrl);
+  if (targets.length === 0) return;
+
+  await Promise.allSettled(targets.map(async (v) => {
+    const meta = await parseMetadata(v.metadataUri);
+    const updates: Partial<VaultInfo> = {
+      imageUrl:    meta.imageUrl,
+      description: meta.description,
+      links:       meta.links,
+    };
+    Object.assign(v, updates);
+    onUpdate?.(v.address, updates);
+  }));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchMetadataJson(metadataURI: string): Promise<any | null> {
-  if (!metadataURI) {
-    console.warn('[fetchMetadataJson] empty URI');
-    return null;
-  }
-  console.log('[fetchMetadataJson] fetching:', metadataURI);
+  if (!metadataURI) return null;
   try {
     if (metadataURI.startsWith(DATA_JSON_PREFIX)) {
       const b64 = metadataURI.slice(DATA_JSON_PREFIX.length);
       const decoded = typeof atob === 'function'
         ? atob(b64)
         : Buffer.from(b64, 'base64').toString('utf-8');
-      console.log('[fetchMetadataJson] data: prefix decoded:', decoded);
-      const json = JSON.parse(decoded);
-      console.log('[fetchMetadataJson] parsed JSON:', json);
-      return json;
+      return JSON.parse(decoded);
     }
     if (metadataURI.startsWith('ipfs://')) {
       const hash = metadataURI.replace('ipfs://', '');
-      const url = PINATA_GW + hash;
-      console.log('[fetchMetadataJson] ipfs → http:', url);
-      const res = await fetch(url, { cache: 'no-store' });
-      console.log('[fetchMetadataJson] response status:', res.status, res.ok);
-      if (!res.ok) {
-        console.error('[fetchMetadataJson] HTTP error', res.status, await res.text());
-        return null;
-      }
-      const json = await res.json();
-      console.log('[fetchMetadataJson] parsed JSON:', json);
-      return json;
+      const res = await fetch(PINATA_GW + hash, { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.json();
     }
     if (metadataURI.startsWith('http://') || metadataURI.startsWith('https://')) {
-      console.log('[fetchMetadataJson] http fetch:', metadataURI);
       const res = await fetch(metadataURI, { cache: 'no-store' });
-      console.log('[fetchMetadataJson] response status:', res.status, res.ok);
-      if (!res.ok) {
-        console.error('[fetchMetadataJson] HTTP error', res.status, await res.text());
-        return null;
-      }
-      const json = await res.json();
-      console.log('[fetchMetadataJson] parsed JSON:', json);
-      return json;
+      if (!res.ok) return null;
+      return await res.json();
     }
-    console.warn('[fetchMetadataJson] unknown URI scheme:', metadataURI);
     return null;
   } catch (err) {
-    console.error('[fetchMetadataJson] threw:', err, '  for URI:', metadataURI);
+    console.error('[fetchMetadataJson] failed:', err, metadataURI);
     return null;
   }
 }
 
 function resolveImageUrl(image: unknown): string {
-  console.log('[resolveImageUrl] raw image field:', image, '(type:', typeof image, ')');
-  if (typeof image !== 'string' || !image) {
-    console.warn('[resolveImageUrl] not a string or empty');
-    return '';
-  }
-  if (image.startsWith('ipfs://')) {
-    const url = PINATA_GW + image.replace('ipfs://', '');
-    console.log('[resolveImageUrl] ipfs → http:', url);
-    return url;
-  }
-  if (image.startsWith('data:')) {
-    console.log('[resolveImageUrl] data: URI (length:', image.length, ')');
-    return image;
-  }
-  if (image.startsWith('http://') || image.startsWith('https://')) {
-    console.log('[resolveImageUrl] direct http URL:', image);
-    return image;
-  }
-  console.warn('[resolveImageUrl] unknown scheme, returning empty:', image);
+  if (typeof image !== 'string' || !image) return '';
+  if (image.startsWith('ipfs://')) return PINATA_GW + image.replace('ipfs://', '');
+  if (image.startsWith('data:'))   return image;
+  if (image.startsWith('http://') || image.startsWith('https://')) return image;
   return '';
-}
-
-export async function parseMetadataImage(metadataURI: string): Promise<string> {
-  const json = await fetchMetadataJson(metadataURI);
-  return resolveImageUrl(json?.image);
 }
 
 export async function parseMetadata(metadataURI: string): Promise<{
   imageUrl: string;
   description: string;
-  links: { website?: string; twitter?: string; telegram?: string };
+  links: VaultLinks;
 }> {
-  console.group('[parseMetadata]', metadataURI);
   const json = await fetchMetadataJson(metadataURI);
-  if (!json) {
-    console.warn('[parseMetadata] no JSON, returning empty');
-    console.groupEnd();
-    return { imageUrl: '', description: '', links: {} };
-  }
-  console.log('[parseMetadata] JSON keys:', Object.keys(json));
-  console.log('[parseMetadata] json.image:', json.image);
-  console.log('[parseMetadata] json.imageUrl:', json.imageUrl);
-  console.log('[parseMetadata] json.description:', json.description);
-  console.log('[parseMetadata] json.links:', json.links);
+  if (!json) return { imageUrl: '', description: '', links: {} };
 
-  // Try multiple common keys for image (image / imageUrl / image_url)
   const imageRaw = json.image ?? json.imageUrl ?? json.image_url;
-  const result = {
+  return {
     imageUrl:    resolveImageUrl(imageRaw),
     description: typeof json.description === 'string' ? json.description : '',
     links: {
@@ -358,7 +238,4 @@ export async function parseMetadata(metadataURI: string): Promise<{
       telegram: typeof json.links?.telegram === 'string' ? json.links.telegram : undefined,
     },
   };
-  console.log('[parseMetadata] FINAL:', result);
-  console.groupEnd();
-  return result;
 }

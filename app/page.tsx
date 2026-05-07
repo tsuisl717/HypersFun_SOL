@@ -33,16 +33,16 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 40;
 
-  const fetchVaults = async (forceRefresh?: boolean) => {
+  const fetchVaults = async (_forceRefresh?: boolean) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await loadVaults((coreAddress, updates) => {
-        // Update vault data when loaded (images, positions, metrics)
+      const data = await loadVaults((address, updates) => {
+        // Stream metadata updates in as IPFS resolves
         setVaults(prev => prev.map(vault =>
-          vault.core.toLowerCase() === coreAddress.toLowerCase() ? { ...vault, ...updates } : vault
+          vault.address === address ? { ...vault, ...updates } : vault
         ));
-      }, forceRefresh);
+      });
       setVaults(data);
     } catch (error) {
       console.error('Failed to load vaults:', error);
@@ -59,30 +59,32 @@ export default function Home() {
 
   const tokens = useMemo((): Token[] => {
     return vaults.map((vault) => ({
-      id: vault.core,
+      id: vault.address,
       name: vault.name,
       symbol: vault.symbol,
       description: vault.description || `Performance Fee: ${vault.performanceFeeBps / 100}%`,
-      links: vault.links,
+      links: vault.links ?? {},
       imageUrl: vault.imageUrl || 'images/cannot_find_image.jpg',
       marketCap: parseFloat(vault.tvl),
-      bondingCurveProgress: Math.min((parseFloat(vault.totalSupply) / 1000000) * 100, 100),
+      bondingCurveProgress: Math.min((vault.totalSupply / 1_000_000) * 100, 100),
       price: parseFloat(vault.buyPrice),
       holders: 0,
       creator: vault.leader,
-      createdAt: vault.createdAt,
-      volume24h: parseFloat(vault.totalVolume),
-      priceChange24h: vault.priceChange24h,
-      priceChange: vault.priceChange, // Use price change from first trade
+      createdAt: 0,
+      volume24h: vault.totalVolume,
+      priceChange24h: 0,
+      priceChange: 0,
       nav: vault.nav,
       buyPrice: vault.buyPrice,
       performanceFeeBps: vault.performanceFeeBps,
       tvl: vault.tvl,
-      totalVolume: vault.totalVolume,
+      totalVolume: vault.totalVolume.toFixed(2),
       leader: vault.leader,
-      positions: vault.positions,
-      winRate: vault.winRate,
-      apy: vault.apy,
+      core: vault.address,
+      metadataURI: vault.metadataUri,
+      positions: [],
+      winRate: 0,
+      apy: 0,
     }));
   }, [vaults]);
 

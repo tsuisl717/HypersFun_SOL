@@ -10,7 +10,10 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
     "@google/genai": "^1.38.0",
+    "@noble/hashes": "^1.5.0",
+    "@solana/spl-token": "^0.4.9",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-ledger": "^0.9.29",
     "@solana/wallet-adapter-phantom": "^0.9.24",
@@ -20,8 +23,6 @@
     "@solana/wallet-adapter-torus": "^0.11.18",
     "@solana/wallet-adapter-wallets": "^0.19.32",
     "@solana/web3.js": "^1.98.0",
-    "@solana/spl-token": "^0.4.9",
-    "@noble/hashes": "^1.5.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tanstack/react-query": "^5.90.20",
     "autoprefixer": "^10.4.23",

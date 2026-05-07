@@ -1,0 +1,2293 @@
+{
+  "address": "5jmoeSiY3kyFhaipuiV1Six4sAwMetsEWNNCTBdfrEza",
+  "metadata": {
+    "name": "hypersfun",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "HypersFun CopyFund Protocol on Solana"
+  },
+  "instructions": [
+    {
+      "name": "add_api_wallet",
+      "discriminator": [
+        158,
+        105,
+        234,
+        110,
+        107,
+        184,
+        99,
+        200
+      ],
+      "accounts": [
+        {
+          "name": "api_wallet",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  112,
+                  105,
+                  95,
+                  119,
+                  97,
+                  108,
+                  108,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault"
+        },
+        {
+          "name": "wallet"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "buy",
+      "discriminator": [
+        102,
+        6,
+        61,
+        18,
+        1,
+        218,
+        235,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "writable": true
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_share",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  97,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "user_token_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "factory"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_mint_bump_placeholder",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "usdc_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_tokens_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_margin_position",
+      "docs": [
+        "Step 3a: Place a reverse reduce_only order to close the perp position on Drift.",
+        "",
+        "This sends an opposite-direction Market order to Drift with reduce_only=true.",
+        "On devnet the order may go to auction (up to 180 slots) before filling.",
+        "Call withdraw_drift_usdc AFTER the order fills (when Drift shows 0 open position).",
+        "",
+        "Flow: [cancel pending open order if any] → place reverse reduce_only Market order"
+      ],
+      "discriminator": [
+        50,
+        7,
+        176,
+        242,
+        71,
+        75,
+        217,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "margin_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  103,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "margin_position.market_index",
+                "account": "MarginPosition"
+              }
+            ]
+          }
+        },
+        {
+          "name": "drift_user",
+          "writable": true
+        },
+        {
+          "name": "drift_state"
+        },
+        {
+          "name": "usdc_spot_market"
+        },
+        {
+          "name": "perp_market",
+          "writable": true
+        },
+        {
+          "name": "usdc_oracle"
+        },
+        {
+          "name": "perp_oracle"
+        },
+        {
+          "name": "drift_program"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_trading_vault",
+      "discriminator": [
+        247,
+        112,
+        157,
+        76,
+        185,
+        251,
+        201,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "trading_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  100,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_allocation_bps",
+          "type": "u64"
+        },
+        {
+          "name": "daily_limit",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_vault",
+      "discriminator": [
+        29,
+        237,
+        247,
+        208,
+        193,
+        82,
+        54,
+        135
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "Vault token mint (SPL Token)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "USDC reserve token account (PDA)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "factory",
+          "writable": true
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "metadata_uri",
+          "type": "string"
+        },
+        {
+          "name": "performance_fee_bps",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "init_drift_account",
+      "docs": [
+        "Step 1: Initialize a Drift sub-account for this vault's trading.",
+        "Must be called once before any margin operations.",
+        "Creates Drift User + UserStats accounts via CPI."
+      ],
+      "discriminator": [
+        148,
+        140,
+        139,
+        85,
+        251,
+        185,
+        66,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "drift_user_account",
+          "docs": [
+            "Our tracking account for this vault's Drift user"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  105,
+                  102,
+                  116,
+                  95,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "drift_user",
+          "docs": [
+            "seeds: [b\"user\", vault.key, sub_account_id(2 bytes LE)] on Drift program"
+          ],
+          "writable": true
+        },
+        {
+          "name": "drift_user_stats",
+          "docs": [
+            "seeds: [b\"user_stats\", vault.key] on Drift program"
+          ],
+          "writable": true
+        },
+        {
+          "name": "drift_state",
+          "writable": true
+        },
+        {
+          "name": "drift_program"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_factory",
+      "discriminator": [
+        179,
+        64,
+        75,
+        250,
+        39,
+        254,
+        240,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "factory",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  111,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "treasury"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "creation_fee",
+          "type": "u64"
+        },
+        {
+          "name": "trading_fee_bps",
+          "type": "u64"
+        },
+        {
+          "name": "global_max_bc_ratio_bps",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "migrate_factory",
+      "docs": [
+        "Migrate existing factory to new layout (adds global_max_bc_ratio_bps).",
+        "Call once after upgrade if factory account was created with old struct."
+      ],
+      "discriminator": [
+        248,
+        245,
+        238,
+        73,
+        119,
+        140,
+        136,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "factory",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  97,
+                  99,
+                  116,
+                  111,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_margin_position",
+      "docs": [
+        "Step 2: Open a perpetual position on Drift.",
+        "Flow: validate → transfer USDC vault→drift_vault → Drift deposit CPI → Drift place_order CPI",
+        "",
+        "Arguments:",
+        "market_index — 0=SOL-PERP, 1=BTC-PERP, 2=ETH-PERP",
+        "direction    — 0=Long, 1=Short",
+        "usdc_collateral — USDC to use as margin (6 decimals)",
+        "leverage_bps    — Target leverage in BPS (e.g. 20000 = 2x)"
+      ],
+      "discriminator": [
+        193,
+        3,
+        200,
+        141,
+        26,
+        123,
+        190,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "USDC reserve of the vault (funds go FROM here into Drift)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "margin_position",
+          "docs": [
+            "Position tracking account (PDA, one per market per vault)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  103,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "arg",
+                "path": "market_index"
+              }
+            ]
+          }
+        },
+        {
+          "name": "drift_user",
+          "writable": true
+        },
+        {
+          "name": "drift_user_stats",
+          "writable": true
+        },
+        {
+          "name": "drift_state",
+          "writable": true
+        },
+        {
+          "name": "drift_spot_vault",
+          "writable": true
+        },
+        {
+          "name": "usdc_spot_market",
+          "writable": true
+        },
+        {
+          "name": "perp_market",
+          "writable": true
+        },
+        {
+          "name": "usdc_oracle"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "perp_oracle"
+        },
+        {
+          "name": "drift_program"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "market_index",
+          "type": "u16"
+        },
+        {
+          "name": "direction",
+          "type": "u8"
+        },
+        {
+          "name": "usdc_collateral",
+          "type": "u64"
+        },
+        {
+          "name": "leverage_bps",
+          "type": "u64"
+        },
+        {
+          "name": "oracle_price_usdc",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "reset_bc",
+      "docs": [
+        "Reset bonding curve virtual reserves to default equal values.",
+        "Use when stored bc state is corrupted. Only callable by vault leader."
+      ],
+      "discriminator": [
+        12,
+        155,
+        43,
+        173,
+        250,
+        153,
+        36,
+        142
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "leader",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "sell",
+      "discriminator": [
+        51,
+        230,
+        133,
+        164,
+        1,
+        127,
+        131,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint",
+          "writable": true
+        },
+        {
+          "name": "usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_share",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  104,
+                  97,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "treasury_usdc",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "factory"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "token_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_usdc_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_factory_bc_ratio",
+      "docs": [
+        "Update factory BC ratio cap (admin only)."
+      ],
+      "discriminator": [
+        189,
+        143,
+        135,
+        131,
+        171,
+        80,
+        156,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "factory",
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "global_max_bc_ratio_bps",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_paused",
+      "discriminator": [
+        91,
+        60,
+        125,
+        192,
+        176,
+        225,
+        166,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "factory",
+          "relations": [
+            "vault"
+          ]
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "sync_margin_pnl",
+      "docs": [
+        "Update vault's external_assets based on current Drift position value.",
+        "Called periodically by leader or automation to keep NAV accurate.",
+        "Since we can't read Drift position value on-chain cheaply,",
+        "the leader provides the current mark price (from oracle/UI).",
+        "",
+        "Arguments:",
+        "current_price_usdc — current oracle price in DRIFT_PRICE_PRECISION (1e6)"
+      ],
+      "discriminator": [
+        96,
+        100,
+        159,
+        195,
+        155,
+        124,
+        188,
+        149
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "margin_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  103,
+                  105,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              },
+              {
+                "kind": "account",
+                "path": "margin_position.market_index",
+                "account": "MarginPosition"
+              }
+            ]
+          }
+        },
+        {
+          "name": "leader",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "current_price_usdc",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_metadata",
+      "discriminator": [
+        170,
+        182,
+        43,
+        239,
+        97,
+        78,
+        225,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "leader",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "metadata_uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_drift_usdc",
+      "docs": [
+        "Step 3b: Withdraw USDC from Drift back to the vault after the position is closed.",
+        "",
+        "Call this AFTER the close order from close_margin_position has filled.",
+        "Drift requires a valid oracle when withdrawing with open perp positions, so",
+        "this must be called AFTER the perp position is fully closed (zero base asset).",
+        "",
+        "Arguments:",
+        "withdraw_amount — USDC to withdraw (in 6-decimal units); use pos.usdc_collateral",
+        "min_usdc_out — slippage floor (typically 0 for testing)"
+      ],
+      "discriminator": [
+        183,
+        80,
+        217,
+        108,
+        176,
+        230,
+        171,
+        25
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault.token_mint",
+                "account": "Vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "USDC reserve (tokens returned HERE from Drift withdraw)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "vault"
+              }
+            ]
+          }
+        },
+        {
+          "name": "drift_user",
+          "writable": true
+        },
+        {
+          "name": "drift_user_stats",
+          "writable": true
+        },
+        {
+          "name": "drift_state"
+        },
+        {
+          "name": "drift_spot_vault",
+          "writable": true
+        },
+        {
+          "name": "drift_signer"
+        },
+        {
+          "name": "usdc_spot_market",
+          "writable": true
+        },
+        {
+          "name": "usdc_oracle"
+        },
+        {
+          "name": "perp_oracle"
+        },
+        {
+          "name": "perp_market"
+        },
+        {
+          "name": "usdc_mint"
+        },
+        {
+          "name": "drift_program"
+        },
+        {
+          "name": "leader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "withdraw_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_usdc_out",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ApiWallet",
+      "discriminator": [
+        91,
+        200,
+        103,
+        214,
+        119,
+        251,
+        109,
+        68
+      ]
+    },
+    {
+      "name": "DriftUserAccount",
+      "discriminator": [
+        182,
+        87,
+        78,
+        134,
+        202,
+        207,
+        28,
+        25
+      ]
+    },
+    {
+      "name": "Factory",
+      "discriminator": [
+        159,
+        68,
+        192,
+        61,
+        48,
+        249,
+        216,
+        202
+      ]
+    },
+    {
+      "name": "MarginPosition",
+      "discriminator": [
+        176,
+        105,
+        128,
+        156,
+        137,
+        230,
+        126,
+        186
+      ]
+    },
+    {
+      "name": "TradingVault",
+      "discriminator": [
+        234,
+        54,
+        29,
+        121,
+        16,
+        231,
+        220,
+        228
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    },
+    {
+      "name": "VaultShare",
+      "discriminator": [
+        86,
+        47,
+        3,
+        248,
+        64,
+        192,
+        78,
+        61
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BuyEvent",
+      "discriminator": [
+        103,
+        244,
+        82,
+        31,
+        44,
+        245,
+        119,
+        119
+      ]
+    },
+    {
+      "name": "MarginCloseEvent",
+      "discriminator": [
+        87,
+        187,
+        76,
+        155,
+        240,
+        189,
+        25,
+        250
+      ]
+    },
+    {
+      "name": "MarginOpenEvent",
+      "discriminator": [
+        194,
+        163,
+        43,
+        190,
+        122,
+        26,
+        192,
+        234
+      ]
+    },
+    {
+      "name": "MarginSyncEvent",
+      "discriminator": [
+        178,
+        120,
+        136,
+        185,
+        75,
+        11,
+        27,
+        55
+      ]
+    },
+    {
+      "name": "SellEvent",
+      "discriminator": [
+        62,
+        47,
+        55,
+        10,
+        165,
+        3,
+        220,
+        42
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "VaultAlreadyRegistered",
+      "msg": "Vault already registered"
+    },
+    {
+      "code": 6001,
+      "name": "VaultNotFound",
+      "msg": "Vault not found"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidFee",
+      "msg": "Invalid fee: exceeds maximum"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientCreationFee",
+      "msg": "Insufficient creation fee"
+    },
+    {
+      "code": 6004,
+      "name": "VaultPaused",
+      "msg": "Vault is paused"
+    },
+    {
+      "code": 6005,
+      "name": "InsufficientUsdc",
+      "msg": "Insufficient USDC amount"
+    },
+    {
+      "code": 6006,
+      "name": "InsufficientTokens",
+      "msg": "Insufficient tokens to sell"
+    },
+    {
+      "code": 6007,
+      "name": "AmountTooSmall",
+      "msg": "Amount too small"
+    },
+    {
+      "code": 6008,
+      "name": "SlippageExceeded",
+      "msg": "Slippage exceeded"
+    },
+    {
+      "code": 6009,
+      "name": "ZeroSupply",
+      "msg": "Zero supply: cannot calculate NAV"
+    },
+    {
+      "code": 6010,
+      "name": "ZeroAmount",
+      "msg": "Zero amount"
+    },
+    {
+      "code": 6011,
+      "name": "NotLeader",
+      "msg": "Not the leader"
+    },
+    {
+      "code": 6012,
+      "name": "NotAuthorized",
+      "msg": "Not authorized"
+    },
+    {
+      "code": 6013,
+      "name": "TradeLimitExceeded",
+      "msg": "Trade limit exceeded"
+    },
+    {
+      "code": 6014,
+      "name": "UnauthorizedApiWallet",
+      "msg": "Unauthorized API wallet"
+    },
+    {
+      "code": 6015,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6016,
+      "name": "DivisionByZero",
+      "msg": "Division by zero"
+    },
+    {
+      "code": 6017,
+      "name": "HoldingPeriodTooShort",
+      "msg": "Holding period too short"
+    },
+    {
+      "code": 6018,
+      "name": "PositionAlreadyOpen",
+      "msg": "Position already open"
+    },
+    {
+      "code": 6019,
+      "name": "NoOpenPosition",
+      "msg": "No open position"
+    },
+    {
+      "code": 6020,
+      "name": "MarginAllocationExceeded",
+      "msg": "Margin allocation exceeds maximum"
+    },
+    {
+      "code": 6021,
+      "name": "LeverageExceeded",
+      "msg": "Leverage exceeds maximum (10x)"
+    },
+    {
+      "code": 6022,
+      "name": "DriftCpiFailed",
+      "msg": "Drift CPI failed"
+    },
+    {
+      "code": 6023,
+      "name": "InvalidMarketIndex",
+      "msg": "Invalid market index"
+    },
+    {
+      "code": 6024,
+      "name": "DriftAccountNotInitialized",
+      "msg": "Drift account not initialized"
+    }
+  ],
+  "types": [
+    {
+      "name": "ApiWallet",
+      "docs": [
+        "API wallet authorized to trade on behalf of leader"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BuyEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_in",
+            "type": "u64"
+          },
+          {
+            "name": "tokens_out",
+            "type": "u64"
+          },
+          {
+            "name": "nav",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DriftUserAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "Parent vault"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "drift_user",
+            "docs": [
+              "The Drift User PDA address (owned by Drift program)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "drift_user_stats",
+            "docs": [
+              "The Drift UserStats PDA address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_deposited",
+            "docs": [
+              "Total USDC currently deposited in Drift"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sub_account_id",
+            "docs": [
+              "Drift sub-account ID (0 by default)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for our tracking account"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Factory",
+      "docs": [
+        "Factory — global registry and settings"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "creation_fee",
+            "type": "u64"
+          },
+          {
+            "name": "trading_fee_bps",
+            "type": "u64"
+          },
+          {
+            "name": "vault_count",
+            "type": "u64"
+          },
+          {
+            "name": "global_max_bc_ratio_bps",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarginCloseEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "leader",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "usdc_returned",
+            "type": "u64"
+          },
+          {
+            "name": "pnl",
+            "type": "i64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarginOpenEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "leader",
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "type": "u16"
+          },
+          {
+            "name": "direction",
+            "type": "u8"
+          },
+          {
+            "name": "base_asset_amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_collateral",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarginPosition",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "Parent vault"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "leader",
+            "docs": [
+              "Leader who opened this position"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "drift_user",
+            "docs": [
+              "Drift User account (sub-account 0 of our TradingVault PDA)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "market_index",
+            "docs": [
+              "Drift perp market index (0=SOL, 1=BTC, 2=ETH ...)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "direction",
+            "docs": [
+              "Direction: 0=Long, 1=Short"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "base_asset_amount",
+            "docs": [
+              "Base asset amount in DRIFT_BASE_PRECISION (1e9)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "usdc_collateral",
+            "docs": [
+              "USDC deposited as collateral (6 decimals, from vault.usdc_reserve)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "entry_price",
+            "docs": [
+              "Last known entry price in DRIFT_PRICE_PRECISION (1e6 = 1 USDC)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "opened_at",
+            "docs": [
+              "Unix timestamp when position opened"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "order_id",
+            "docs": [
+              "Drift order ID (for cancellation)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "is_open",
+            "docs": [
+              "Whether position is currently open"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarginSyncEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "external_assets",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SellEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "tokens_in",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_out",
+            "type": "u64"
+          },
+          {
+            "name": "exit_fee",
+            "type": "u64"
+          },
+          {
+            "name": "perf_fee",
+            "type": "u64"
+          },
+          {
+            "name": "nav",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TradingVault",
+      "docs": [
+        "Trading vault — tracks funds deployed by leader for spot/perp trading"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "leader",
+            "type": "pubkey"
+          },
+          {
+            "name": "allocated_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "max_allocation_bps",
+            "type": "u64"
+          },
+          {
+            "name": "daily_trade_limit",
+            "type": "u64"
+          },
+          {
+            "name": "trades_today",
+            "type": "u64"
+          },
+          {
+            "name": "last_reset_day",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "Core Vault account — bonding curve AMM state"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "leader",
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "metadata_uri",
+            "type": "string"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_reserve",
+            "type": "u64"
+          },
+          {
+            "name": "total_supply",
+            "type": "u64"
+          },
+          {
+            "name": "total_volume",
+            "type": "u64"
+          },
+          {
+            "name": "external_assets",
+            "type": "u64"
+          },
+          {
+            "name": "performance_fee_bps",
+            "type": "u64"
+          },
+          {
+            "name": "bc_virtual_base",
+            "type": "u64"
+          },
+          {
+            "name": "bc_virtual_tokens",
+            "type": "u64"
+          },
+          {
+            "name": "twap_nav",
+            "type": "u64"
+          },
+          {
+            "name": "twap_last_updated",
+            "type": "i64"
+          },
+          {
+            "name": "twap_half_life",
+            "type": "i64"
+          },
+          {
+            "name": "is_paused",
+            "type": "bool"
+          },
+          {
+            "name": "factory",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "usdc_vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultShare",
+      "docs": [
+        "Per-user share record (PDA: [b\"share\", vault, user])"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "entry_nav",
+            "type": "u64"
+          },
+          {
+            "name": "acquired_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

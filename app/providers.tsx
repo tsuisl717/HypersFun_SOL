@@ -8,18 +8,18 @@ import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { TorusWalletAdapter }    from '@solana/wallet-adapter-torus';
 import { LedgerWalletAdapter }   from '@solana/wallet-adapter-ledger';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { clusterApiUrl } from '@solana/web3.js';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
+import { CONFIG, NETWORK } from '@/lib/contracts/config';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 const queryClient = new QueryClient();
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const network = (process.env.NEXT_PUBLIC_SOLANA_NETWORK === 'mainnet'
+  const network = NETWORK === 'mainnet-beta'
     ? WalletAdapterNetwork.Mainnet
-    : WalletAdapterNetwork.Devnet);
-  const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC || clusterApiUrl(network);
+    : WalletAdapterNetwork.Devnet;
+  const endpoint = CONFIG.rpcUrl;
 
   const wallets = useMemo(() => [
     new PhantomWalletAdapter(),
