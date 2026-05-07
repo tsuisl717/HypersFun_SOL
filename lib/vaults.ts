@@ -1,5 +1,3 @@
-'use client';
-
 import { Connection, PublicKey } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
 import { CONFIG, PROGRAM_ID, PRECISION } from './contracts/config';

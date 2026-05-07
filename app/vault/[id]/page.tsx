@@ -43,8 +43,8 @@ import {
 import { parseMetadata, type VaultLinks } from '@/lib/vaults';
 
 // ─── Dynamic / lazy components ──────────────────────────────────────────────
-const PriceChart = dynamic(
-  () => import('@/components/bonding-curve-vault/PriceChart'),
+const AdvancedChart = dynamic(
+  () => import('@/components/bonding-curve-vault/AdvancedChart'),
   {
     ssr: false,
     loading: () => (
@@ -472,8 +472,12 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         {activeTab === 'trading' && (
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-px bg-border">
             {/* Chart */}
-            <div className="bg-[#131722] min-h-[400px] lg:min-h-0">
-              <PriceChart tokenSymbol={vault.symbol || '???'} />
+            <div className="bg-[#131722] min-h-[500px] lg:min-h-0">
+              <AdvancedChart
+                vaultAddress={vault.address}
+                tokenSymbol={vault.symbol || '???'}
+                currentPrice={buyPrice}
+              />
             </div>
 
             {/* Right rail */}
