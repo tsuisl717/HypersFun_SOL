@@ -27,7 +27,7 @@ export function useFactoryStats() {
   useEffect(() => {
     loadVaults().then(vaults => {
       const totalTVL = vaults.reduce((sum, v) => sum + parseFloat(v.tvl || '0'), 0);
-      const verified = vaults.filter(v => v.verified).length;
+      const verified = 0;
       setStats({
         totalVaults: vaults.length,
         verifiedVaultsCount: verified,
@@ -57,15 +57,15 @@ export function useTopVaults(limit = 10) {
         .sort((a, b) => parseFloat(b.tvl || '0') - parseFloat(a.tvl || '0'))
         .slice(0, limit)
         .map(v => ({
-          address: v.core,
+          address: v.address,
           name: v.name,
           symbol: v.symbol,
           leader: v.leader,
           tvl: parseFloat(v.tvl || '0'),
           tvlFormatted: formatTVL(parseFloat(v.tvl || '0')),
           performanceFeeBps: v.performanceFeeBps,
-          verified: v.verified,
-          createdAt: v.createdAt,
+          verified: false,
+          createdAt: 0,
         }));
       setTopVaults(sorted);
       setIsLoading(false);

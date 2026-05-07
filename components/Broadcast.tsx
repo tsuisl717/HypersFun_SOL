@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getCachedVaults, VaultInfo } from '@/lib/vaults';
 
 interface Vault {
   name: string;
@@ -13,31 +12,14 @@ export default function Broadcast() {
   const [vaults, setVaults] = useState<Vault[]>([]);
 
   useEffect(() => {
-    // Fetch recent vaults data - try cache first, then fallback to API
     const fetchVaults = async () => {
       try {
-        // Try to use cached vaults data first (reuse from lib/vaults.ts)
-        const cachedVaults = getCachedVaults();
-        if (cachedVaults && cachedVaults.length > 0) {
-          // Sort by priceChange24h and take top 10
-          const sorted = [...cachedVaults]
-            .sort((a, b) => Math.abs(b.priceChange24h) - Math.abs(a.priceChange24h))
-            .slice(0, 10)
-            .map(v => ({
-              name: v.name,
-              symbol: v.symbol,
-              priceChange: v.priceChange24h,
-            }));
-          setVaults(sorted);
-          console.log('[Broadcast] Using cached vaults data');
-          return;
-        }
-
-        // Fallback to API if cache miss
         const response = await fetch('/api/vaults/recent');
         if (response.ok) {
           const data = await response.json();
-          setVaults(data);
+          // API may return either an array or { data: [...] } when paginated
+          const list = Array.isArray(data) ? data : (data?.data ?? []);
+          setVaults(list);
         }
       } catch (error) {
         console.error('Failed to fetch vaults:', error);

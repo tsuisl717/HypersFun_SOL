@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const recentVaults = vaults.map(vault => ({
       name: vault.name,
       symbol: vault.symbol,
-      priceChange: vault.priceChange24h,
+      priceChange: 0,
     }));
 
     // Only paginate if totalVaults > 40
