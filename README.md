@@ -89,7 +89,6 @@ Create a `.env.local` file (it is git-ignored). All `NEXT_PUBLIC_*` values are e
 | `NEXT_PUBLIC_PROGRAM_ID`       | HypersFun program ID on mainnet                                          |
 | `NEXT_PUBLIC_FACTORY_PDA`      | Factory PDA on mainnet                                                   |
 | `PINATA_JWT`                   | Pinata JWT used by the `/api/pinata/upload` route to pin fund metadata   |
-| `GEMINI_API_KEY`               | Google GenAI key (used by AI-assisted UX features)                       |
 
 Devnet program/factory/USDC addresses are hard-coded in [lib/contracts/config.ts](lib/contracts/config.ts) — no env vars required to try things out on devnet.
 
