@@ -1,7 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="HypersFun Banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
 # HypersFun — CopyFundFi Protocol on Solana
 
 HypersFun lets traders launch onchain funds in a single click and lets investors copy those funds transparently in real time. Funds are tokenized, NAV-anchored, and fully non-custodial — settled through Anchor programs on Solana with Drift Protocol providing the perpetuals venue.
