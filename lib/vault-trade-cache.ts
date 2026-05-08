@@ -17,12 +17,15 @@ import { getProgram } from '@/lib/contracts/margin';
 import {
   fetchVaultTrades,
   mergeTrades,
+  mergeMarginTrades,
   type VaultTrade,
+  type VaultMarginTrade,
 } from '@/lib/vault-events';
 
 // ─── Cache shape ────────────────────────────────────────────────────────────
 export interface VaultCacheEntry {
   trades: VaultTrade[];
+  marginTrades: VaultMarginTrade[];
   latestSig: string | null;
   lastSync: number;          // ms — 0 means never synced
   syncing?: Promise<void>;   // in-flight sync (so concurrent requests share)
@@ -86,32 +89,38 @@ export async function ensureFreshTrades(
   }
 
   if (!entry) {
-    entry = { trades: [], latestSig: null, lastSync: 0 };
+    entry = { trades: [], marginTrades: [], latestSig: null, lastSync: 0 };
     tradeCache.set(vaultStr, entry);
   }
+  const e = entry;
 
   const syncPromise = (async () => {
-    const since = entry!.latestSig ?? undefined;
+    const since = e.latestSig ?? undefined;
     try {
-      const { trades: newTrades, latestSig } = await fetchVaultTrades(
+      const {
+        trades: newTrades,
+        marginTrades: newMargin,
+        latestSig,
+      } = await fetchVaultTrades(
         getConn(),
         getReadProgram(),
         new PublicKey(vaultStr),
         { signatureLimit: since ? 200 : 500, since },
       );
 
-      entry!.trades = mergeTrades(entry!.trades, newTrades);
-      entry!.latestSig = latestSig ?? entry!.latestSig;
-      entry!.lastSync = Date.now();
-    } catch (e) {
-      console.error('[vault-trade-cache] sync error for', vaultStr, e);
+      e.trades = mergeTrades(e.trades, newTrades);
+      e.marginTrades = mergeMarginTrades(e.marginTrades, newMargin);
+      e.latestSig = latestSig ?? e.latestSig;
+      e.lastSync = Date.now();
+    } catch (err) {
+      console.error('[vault-trade-cache] sync error for', vaultStr, err);
       // Don't update lastSync — let the next request retry
     } finally {
-      delete entry!.syncing;
+      delete e.syncing;
     }
   })();
 
-  entry.syncing = syncPromise;
+  e.syncing = syncPromise;
   await syncPromise;
-  return entry;
+  return e;
 }

@@ -38,6 +38,30 @@ export interface VaultTrade {
   slot: number;
 }
 
+/**
+ * Drift margin trade event — emitted when the vault leader opens or closes
+ * a perp position on Drift via the program's CPI. Source events:
+ *   • MarginOpenEvent  → side='open',  pnl=0, usdcReturned=0
+ *   • MarginCloseEvent → side='close', baseAmount=0, usdcCollateral=0,
+ *                                       direction='long' (placeholder — close
+ *                                       event doesn't carry direction)
+ */
+export type MarginSide = 'open' | 'close';
+
+export interface VaultMarginTrade {
+  signature: string;
+  side: MarginSide;
+  leader: string;
+  marketIndex: number;
+  direction: 'long' | 'short';   // 0=Long, 1=Short — meaningful for 'open'
+  baseAmount: number;            // human (Drift base precision = 1e9)
+  usdcCollateral: number;        // human USDC — open-only
+  usdcReturned: number;          // human USDC — close-only
+  pnl: number;                   // human USDC — close-only (signed)
+  timestamp: number;             // unix seconds
+  slot: number;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function bnToNumber(v: any): number {
@@ -85,6 +109,40 @@ function eventToTrade(
   return null;
 }
 
+function eventToMarginTrade(
+  ev: { name: string; data: Record<string, unknown> },
+  sig: string,
+  slot: number,
+): VaultMarginTrade | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const d = ev.data as any;
+  const timestamp = bnToNumber(d.timestamp);
+  const leader = d.leader?.toBase58?.() ?? String(d.leader ?? '');
+  const marketIndex = bnToNumber(d.marketIndex ?? d.market_index);
+  const name = ev.name.toLowerCase();
+
+  // Drift base precision is 1e9, USDC is 1e6.
+  if (name === 'marginopenevent') {
+    const direction = bnToNumber(d.direction) === 1 ? 'short' : 'long';
+    const baseAmount = bnToNumber(d.baseAssetAmount ?? d.base_asset_amount) / 1e9;
+    const usdcCollateral = bnToNumber(d.usdcCollateral ?? d.usdc_collateral) / 1e6;
+    return {
+      signature: sig, side: 'open', leader, marketIndex, direction,
+      baseAmount, usdcCollateral, usdcReturned: 0, pnl: 0, timestamp, slot,
+    };
+  }
+  if (name === 'margincloseevent') {
+    const usdcReturned = bnToNumber(d.usdcReturned ?? d.usdc_returned) / 1e6;
+    // pnl is i64 — bnToNumber returns signed.
+    const pnl = bnToNumber(d.pnl) / 1e6;
+    return {
+      signature: sig, side: 'close', leader, marketIndex, direction: 'long',
+      baseAmount: 0, usdcCollateral: 0, usdcReturned, pnl, timestamp, slot,
+    };
+  }
+  return null;
+}
+
 // ─── Public: fetch new trades since a given signature ───────────────────────
 export interface FetchTradesOptions {
   /** Max signatures to scan in one go. Default 300. */
@@ -95,6 +153,7 @@ export interface FetchTradesOptions {
 
 export interface FetchTradesResult {
   trades: VaultTrade[];
+  marginTrades: VaultMarginTrade[];
   /** Newest signature observed in this fetch (use as `since` next time). */
   latestSig: string | null;
 }
@@ -131,16 +190,16 @@ export async function fetchVaultTrades(
         dlog(`retry without until -> ${sigs.length} sigs`);
       } catch (e2) {
         console.warn('[vault-events] getSignaturesForAddress failed:', e2);
-        return { trades: [], latestSig: null };
+        return { trades: [], marginTrades: [], latestSig: null };
       }
     } else {
       console.warn('[vault-events] getSignaturesForAddress failed:', e);
-      return { trades: [], latestSig: null };
+      return { trades: [], marginTrades: [], latestSig: null };
     }
   }
 
   if (sigs.length === 0) {
-    return { trades: [], latestSig: null };
+    return { trades: [], marginTrades: [], latestSig: null };
   }
 
   // 2. Batch-fetch transactions. `getTransactions` sends a single JSON-RPC
@@ -151,6 +210,7 @@ export async function fetchVaultTrades(
 
   const BATCH_SIZE = 25;
   const trades: VaultTrade[] = [];
+  const marginTrades: VaultMarginTrade[] = [];
   let txOk = 0, txMissing = 0, txWithEvents = 0, totalEvents = 0;
 
   for (let i = 0; i < sigStrings.length; i += BATCH_SIZE) {
@@ -178,21 +238,26 @@ export async function fetchVaultTrades(
       let foundOne = false;
       for (const ev of parser.parseLogs(logs, false)) {
         const lower = ev.name.toLowerCase();
-        if (lower !== 'buyevent' && lower !== 'sellevent') {
-          dlog(`skip non-trade event: ${ev.name}`);
-          continue;
-        }
-        const trade = eventToTrade(
-          { name: ev.name, data: ev.data as Record<string, unknown> },
-          sig,
-          slot,
-        );
-        if (trade) {
-          trades.push(trade);
-          totalEvents++;
-          foundOne = true;
+        const evRef = { name: ev.name, data: ev.data as Record<string, unknown> };
+
+        if (lower === 'buyevent' || lower === 'sellevent') {
+          const trade = eventToTrade(evRef, sig, slot);
+          if (trade) {
+            trades.push(trade);
+            totalEvents++;
+            foundOne = true;
+          } else {
+            dlog(`event ${ev.name} failed to decode for sig ${sig.slice(0, 8)}…`);
+          }
+        } else if (lower === 'marginopenevent' || lower === 'margincloseevent') {
+          const mt = eventToMarginTrade(evRef, sig, slot);
+          if (mt) {
+            marginTrades.push(mt);
+            totalEvents++;
+            foundOne = true;
+          }
         } else {
-          dlog(`event ${ev.name} failed to decode for sig ${sig.slice(0, 8)}…`);
+          dlog(`skip non-trade event: ${ev.name}`);
         }
       }
       if (foundOne) txWithEvents++;
@@ -209,7 +274,8 @@ export async function fetchVaultTrades(
   );
 
   trades.sort((a, b) => a.timestamp - b.timestamp);
-  return { trades, latestSig: sigs[0]?.signature ?? null };
+  marginTrades.sort((a, b) => a.timestamp - b.timestamp);
+  return { trades, marginTrades, latestSig: sigs[0]?.signature ?? null };
 }
 
 // ─── Public: merge two trade lists (dedupe) ─────────────────────────────────
@@ -220,6 +286,23 @@ export function mergeTrades(a: VaultTrade[], b: VaultTrade[]): VaultTrade[] {
   const out: VaultTrade[] = [];
   for (const t of [...a, ...b]) {
     const key = `${t.signature}:${t.side}:${t.timestamp}:${t.user}:${t.usdc}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out.sort((x, y) => x.timestamp - y.timestamp);
+}
+
+export function mergeMarginTrades(
+  a: VaultMarginTrade[],
+  b: VaultMarginTrade[],
+): VaultMarginTrade[] {
+  if (b.length === 0) return a;
+  if (a.length === 0) return b.slice().sort((x, y) => x.timestamp - y.timestamp);
+  const seen = new Set<string>();
+  const out: VaultMarginTrade[] = [];
+  for (const t of [...a, ...b]) {
+    const key = `${t.signature}:${t.side}:${t.marketIndex}:${t.timestamp}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(t);

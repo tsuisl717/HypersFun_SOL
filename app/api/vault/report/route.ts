@@ -34,7 +34,7 @@ import * as anchor from '@coral-xyz/anchor';
 
 import { ensureFreshTrades, getServerConnection } from '@/lib/vault-trade-cache';
 import { getProgram } from '@/lib/contracts/margin';
-import type { VaultTrade } from '@/lib/vault-events';
+import type { VaultTrade, VaultMarginTrade } from '@/lib/vault-events';
 
 export const dynamic = 'force-dynamic';
 
@@ -205,6 +205,29 @@ function summarise(trades: VaultTrade[]) {
   };
 }
 
+function summariseMargin(margin: VaultMarginTrade[]) {
+  if (margin.length === 0) {
+    return {
+      totalMarginTrades: 0,
+      openCount: 0,
+      closeCount: 0,
+      realizedPnl: 0,
+    };
+  }
+  let openCount = 0, closeCount = 0;
+  let realizedPnl = 0;
+  for (const m of margin) {
+    if (m.side === 'open') openCount++;
+    else { closeCount++; realizedPnl += m.pnl; }
+  }
+  return {
+    totalMarginTrades: margin.length,
+    openCount,
+    closeCount,
+    realizedPnl,
+  };
+}
+
 /** Down-sample trades to ~120 NAV points so the chart isn't huge */
 function buildNavHistory(trades: VaultTrade[], maxPoints = 120) {
   if (trades.length === 0) return [];
@@ -249,7 +272,11 @@ export async function GET(request: Request) {
     const navHistory = buildNavHistory(entry.trades, 120);
     const recentTrades = entry.trades.slice(-50).reverse(); // newest first
 
-    // 2. Vault state (token mint + decimals)
+    // 2. Drift margin trades (leader's perp opens/closes via vault CPI)
+    const marginTrades: VaultMarginTrade[] = entry.marginTrades.slice(-50).reverse();
+    const marginSummary = summariseMargin(entry.marginTrades);
+
+    // 3. Vault state (token mint + decimals)
     const vaultMeta = await fetchVaultMintInfo(vaultPk);
     let topHolders: HolderInfo[] = [];
     let uniqueHolders = 0;
@@ -275,11 +302,13 @@ export async function GET(request: Request) {
           : null,
         summary: {
           ...summary,
+          ...marginSummary,
           uniqueHolders,
           tokenSupply,
         },
         topHolders,
         recentTrades,
+        marginTrades,
         navHistory,
       },
       {

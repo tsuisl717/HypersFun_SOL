@@ -48,6 +48,20 @@ export interface ReportHolder {
   percent: number;
 }
 
+export interface ReportMarginTrade {
+  signature: string;
+  side: 'open' | 'close';
+  leader: string;
+  marketIndex: number;
+  direction: 'long' | 'short';
+  baseAmount: number;
+  usdcCollateral: number;
+  usdcReturned: number;
+  pnl: number;
+  timestamp: number;
+  slot: number;
+}
+
 export interface ReportData {
   vault: string;
   lastSync: number;
@@ -56,6 +70,7 @@ export interface ReportData {
   summary: any;
   topHolders: ReportHolder[];
   recentTrades: ReportTrade[];
+  marginTrades: ReportMarginTrade[];
   navHistory: { time: number; value: number }[];
 }
 

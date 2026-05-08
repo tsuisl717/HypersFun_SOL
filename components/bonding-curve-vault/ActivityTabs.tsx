@@ -4,8 +4,9 @@
  * ActivityTabs — bottom panel below the chart on the trading tab.
  *
  * Mirrors HyperVapor's `ChartSection` activity log: tab row + scrollable
- * table for History (vault buy/sell trades) and Holders. Drops the L1
- * Trades sub-tab since there's no Hyperliquid on Solana.
+ * tables for History (vault buy/sell), Holders, and Drift (leader's
+ * margin trades on Drift via the program's CPI — the Solana counterpart
+ * to HyperVapor's "L1 Trades" sub-tab).
  *
  * Data source: shared client-side SWR cache (lib/vault-data-cache.ts) —
  * cache is keyed by vault address and shared with SimulationPanel, so
@@ -20,9 +21,22 @@ import {
   useReport,
   type ReportTrade as TradeRow,
   type ReportHolder as HolderRow,
+  type ReportMarginTrade as MarginRow,
 } from '@/lib/vault-data-cache';
 
-type Tab = 'history' | 'holders';
+// Drift perp market index → symbol (mirrors KNOWN_MARKETS in lib/drift/api.ts)
+const MARKET_SYMBOL: Record<number, string> = {
+  0: 'SOL-PERP', 1: 'BTC-PERP', 2: 'ETH-PERP', 3: 'APT-PERP',
+  4: '1MBONK-PERP', 5: 'MATIC-PERP', 6: 'ARB-PERP', 7: 'DOGE-PERP',
+  8: 'BNB-PERP', 9: 'SUI-PERP', 10: '1MPEPE-PERP', 11: 'OP-PERP',
+  12: 'RNDR-PERP', 13: 'XRP-PERP', 14: 'HNT-PERP', 15: 'INJ-PERP',
+  16: 'LINK-PERP', 17: 'RLB-PERP', 18: 'PYTH-PERP', 19: 'TIA-PERP',
+  20: 'JTO-PERP', 21: 'SEI-PERP', 22: 'AVAX-PERP', 23: 'WIF-PERP',
+  24: 'JUP-PERP', 25: 'DYM-PERP', 26: 'TAO-PERP', 27: 'W-PERP',
+  28: 'KMNO-PERP', 29: 'TNSR-PERP',
+};
+
+type Tab = 'history' | 'holders' | 'drift';
 
 // ─── Component ──────────────────────────────────────────────────────────────
 export default function ActivityTabs({
@@ -38,8 +52,10 @@ export default function ActivityTabs({
   const symbol = data?.meta?.symbol ?? '';
   const trades = data?.recentTrades ?? [];
   const holders = data?.topHolders ?? [];
+  const marginTrades = data?.marginTrades ?? [];
   const holderCount = data?.summary?.uniqueHolders ?? 0;
   const tradeCount = data?.summary?.totalTrades ?? 0;
+  const marginCount = data?.summary?.totalMarginTrades ?? 0;
 
   return (
     <div className="flex-1 border-t border-border bg-black flex flex-col min-h-[200px] lg:min-h-0 overflow-hidden">
@@ -53,6 +69,13 @@ export default function ActivityTabs({
         </TabButton>
         <TabButton active={tab === 'holders'} onClick={() => setTab('holders')}>
           Holders ({holderCount})
+        </TabButton>
+        <span className="text-[10px] text-gray-700 hidden md:inline">|</span>
+        <span className="text-[10px] text-gray-600 font-bold uppercase tracking-widest hidden md:inline">
+          Drift:
+        </span>
+        <TabButton active={tab === 'drift'} onClick={() => setTab('drift')} accent="purple">
+          Trades {marginCount ? `(${marginCount})` : ''}
         </TabButton>
         <div className="ml-auto flex items-center gap-2">
           {syncing && (
@@ -80,12 +103,14 @@ export default function ActivityTabs({
           </div>
         ) : tab === 'history' ? (
           <HistoryTable trades={trades} symbol={symbol} />
-        ) : (
+        ) : tab === 'holders' ? (
           <HoldersTable
             holders={holders}
             symbol={symbol}
             leaderAddress={leaderAddress}
           />
+        ) : (
+          <DriftTradesTable trades={marginTrades} />
         )}
       </div>
     </div>
@@ -338,22 +363,172 @@ function HoldersTable({
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Drift trades — leader's perp opens/closes via vault CPI
+// ────────────────────────────────────────────────────────────────────────────
+function DriftTradesTable({ trades }: { trades: MarginRow[] }) {
+  if (trades.length === 0) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-gray-500 text-sm">No Drift trades yet</p>
+        <p className="text-gray-600 text-[10px] mt-1 font-mono">
+          Leader's margin trades will appear here once they open a position.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Mobile: compact rows */}
+      <div className="md:hidden divide-y divide-gray-800/50">
+        {trades.map((t) => {
+          const sym = MARKET_SYMBOL[t.marketIndex] ?? `MKT-${t.marketIndex}`;
+          const isOpen = t.side === 'open';
+          return (
+            <div
+              key={`${t.signature}:${t.side}`}
+              className="flex items-center justify-between text-[10px] px-2 py-1"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className={`font-bold ${
+                    isOpen
+                      ? t.direction === 'long' ? 'text-primary' : 'text-red-400'
+                      : 'text-purple-400'
+                  }`}
+                >
+                  {isOpen ? (t.direction === 'long' ? 'L' : 'S') : 'C'}
+                </span>
+                <span className="text-white font-mono">{sym}</span>
+                {isOpen ? (
+                  <span className="text-gray-500">${t.usdcCollateral.toFixed(2)}</span>
+                ) : (
+                  <span className={t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
+                    {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-gray-500 whitespace-nowrap">
+                  {formatTime(t.timestamp, true)}
+                </span>
+                <a
+                  href={getExplorerUrl('tx', t.signature)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-gray-500 hover:text-primary"
+                >
+                  <ExternalLink size={10} />
+                </a>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: dense HyperVapor-style table */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-[11px] font-mono">
+          <thead className="text-gray-500 border-b border-white/10 sticky top-0 bg-black z-10">
+            <tr className="text-[10px] uppercase tracking-widest">
+              <th className="text-left px-4 py-2 font-bold">Time</th>
+              <th className="text-left px-4 py-2 font-bold">Market</th>
+              <th className="text-left px-4 py-2 font-bold">Side</th>
+              <th className="text-right px-4 py-2 font-bold">Size</th>
+              <th className="text-right px-4 py-2 font-bold">Collateral</th>
+              <th className="text-right px-4 py-2 font-bold">USDC Out</th>
+              <th className="text-right px-4 py-2 font-bold">PnL</th>
+              <th className="text-center px-4 py-2 font-bold">Tx</th>
+            </tr>
+          </thead>
+          <tbody className="text-gray-400">
+            {trades.map((t) => {
+              const sym = MARKET_SYMBOL[t.marketIndex] ?? `MKT-${t.marketIndex}`;
+              const isOpen = t.side === 'open';
+              const sideLabel = isOpen
+                ? (t.direction === 'long' ? 'Long' : 'Short')
+                : 'Close';
+              const sideColor = isOpen
+                ? (t.direction === 'long' ? 'text-primary' : 'text-red-400')
+                : 'text-purple-400';
+              return (
+                <tr
+                  key={`${t.signature}:${t.side}`}
+                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
+                >
+                  <td className="px-4 py-1.5 text-gray-500 whitespace-nowrap">
+                    {formatTime(t.timestamp)}
+                  </td>
+                  <td className="px-4 py-1.5 text-white font-bold">{sym}</td>
+                  <td className={`px-4 py-1.5 font-bold uppercase ${sideColor}`}>
+                    {sideLabel}
+                  </td>
+                  <td className="px-4 py-1.5 text-right">
+                    {isOpen ? t.baseAmount.toFixed(4) : '-'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right">
+                    {isOpen ? `$${t.usdcCollateral.toFixed(2)}` : '-'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-cyan-300">
+                    {!isOpen ? `$${t.usdcReturned.toFixed(2)}` : '-'}
+                  </td>
+                  <td
+                    className={`px-4 py-1.5 text-right font-bold ${
+                      isOpen
+                        ? 'text-gray-600'
+                        : t.pnl >= 0
+                        ? 'text-green-400'
+                        : 'text-red-400'
+                    }`}
+                  >
+                    {isOpen
+                      ? '-'
+                      : `${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}`}
+                  </td>
+                  <td className="px-4 py-1.5 text-center">
+                    <a
+                      href={getExplorerUrl('tx', t.signature)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-500 hover:text-primary cursor-pointer inline-flex items-center"
+                      title={t.signature}
+                    >
+                      <ExternalLink size={11} />
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 function TabButton({
   active,
   onClick,
   children,
+  accent,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  accent?: 'purple';
 }) {
+  const activeColor =
+    accent === 'purple'
+      ? 'text-purple-400 border-purple-400'
+      : 'text-primary border-primary';
   return (
     <button
       onClick={onClick}
       className={`text-[10px] md:text-sm font-black uppercase cursor-pointer h-full tracking-widest transition-colors whitespace-nowrap ${
         active
-          ? 'text-primary border-b-2 border-primary'
+          ? `${activeColor} border-b-2`
           : 'text-gray-500 hover:text-white'
       }`}
     >
