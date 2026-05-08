@@ -50,6 +50,16 @@ interface HolderInfo {
   percent: number;       // share of supply, 0–100
 }
 
+interface OpenPositionRow {
+  pda: string;
+  marketIndex: number;
+  direction: 'long' | 'short';
+  baseAmount: number;        // human (Drift base precision = 1e9)
+  usdcCollateral: number;    // human USDC
+  entryPrice: number;        // human USDC per base unit
+  openedAt: number;          // unix seconds
+}
+
 async function fetchHolders(
   tokenMint: PublicKey,
   decimals: number,
@@ -94,6 +104,48 @@ async function fetchHolders(
   } catch (e) {
     console.error('[api/vault/report] fetchHolders error', e);
     return { holders: [], totalSupply: 0, uniqueHolders: 0 };
+  }
+}
+
+async function fetchOpenPositions(vaultPk: PublicKey): Promise<OpenPositionRow[]> {
+  try {
+    const conn = getServerConnection();
+    const provider = new anchor.AnchorProvider(
+      conn,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { publicKey: PublicKey.default } as any,
+      { commitment: 'confirmed' },
+    );
+    const program = getProgram(provider);
+
+    // MarginPosition layout: 8 (discriminator) + 32 (vault) → vault filter at offset 8.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accs: any[] = await (program.account as any).marginPosition.all([
+      { memcmp: { offset: 8, bytes: vaultPk.toBase58() } },
+    ]);
+
+    const out: OpenPositionRow[] = [];
+    for (const a of accs) {
+      const acc = a.account;
+      if (!acc?.isOpen) continue;
+      const baseAmount = Number(acc.baseAssetAmount?.toString?.() ?? 0) / 1e9;
+      const usdcCollateral = Number(acc.usdcCollateral?.toString?.() ?? 0) / 1e6;
+      const entryPrice = Number(acc.entryPrice?.toString?.() ?? 0) / 1e6;
+      const openedAt = Number(acc.openedAt?.toString?.() ?? 0);
+      out.push({
+        pda: a.publicKey.toBase58(),
+        marketIndex: acc.marketIndex,
+        direction: acc.direction === 1 ? 'short' : 'long',
+        baseAmount,
+        usdcCollateral,
+        entryPrice,
+        openedAt,
+      });
+    }
+    return out.sort((a, b) => b.openedAt - a.openedAt);
+  } catch (e) {
+    console.error('[api/vault/report] fetchOpenPositions error', e);
+    return [];
   }
 }
 
@@ -288,6 +340,9 @@ export async function GET(request: Request) {
       tokenSupply = h.totalSupply;
     }
 
+    // 4. Open Drift margin positions for this vault (one per market).
+    const openPositions = await fetchOpenPositions(vaultPk);
+
     return NextResponse.json(
       {
         vault: vaultPk.toBase58(),
@@ -305,10 +360,12 @@ export async function GET(request: Request) {
           ...marginSummary,
           uniqueHolders,
           tokenSupply,
+          openPositionsCount: openPositions.length,
         },
         topHolders,
         recentTrades,
         marginTrades,
+        openPositions,
         navHistory,
       },
       {

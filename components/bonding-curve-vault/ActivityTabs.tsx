@@ -22,6 +22,7 @@ import {
   type ReportTrade as TradeRow,
   type ReportHolder as HolderRow,
   type ReportMarginTrade as MarginRow,
+  type ReportOpenPosition as PositionRow,
 } from '@/lib/vault-data-cache';
 
 // Drift perp market index → symbol (mirrors KNOWN_MARKETS in lib/drift/api.ts)
@@ -53,9 +54,11 @@ export default function ActivityTabs({
   const trades = data?.recentTrades ?? [];
   const holders = data?.topHolders ?? [];
   const marginTrades = data?.marginTrades ?? [];
+  const openPositions = data?.openPositions ?? [];
   const holderCount = data?.summary?.uniqueHolders ?? 0;
   const tradeCount = data?.summary?.totalTrades ?? 0;
   const marginCount = data?.summary?.totalMarginTrades ?? 0;
+  const positionsCount = openPositions.length;
 
   return (
     <div className="flex-1 border-t border-border bg-black flex flex-col min-h-[200px] lg:min-h-0 overflow-hidden">
@@ -75,7 +78,9 @@ export default function ActivityTabs({
           Drift:
         </span>
         <TabButton active={tab === 'drift'} onClick={() => setTab('drift')} accent="purple">
-          Trades {marginCount ? `(${marginCount})` : ''}
+          {positionsCount > 0
+            ? `Pos (${positionsCount}) · Trades ${marginCount ? `(${marginCount})` : ''}`
+            : `Trades ${marginCount ? `(${marginCount})` : ''}`}
         </TabButton>
         <div className="ml-auto flex items-center gap-2">
           {syncing && (
@@ -110,7 +115,7 @@ export default function ActivityTabs({
             leaderAddress={leaderAddress}
           />
         ) : (
-          <DriftTradesTable trades={marginTrades} />
+          <DriftPanel positions={openPositions} trades={marginTrades} />
         )}
       </div>
     </div>
@@ -364,16 +369,143 @@ function HoldersTable({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Drift panel — open positions (top) + trade history (bottom)
+// ────────────────────────────────────────────────────────────────────────────
+function DriftPanel({
+  positions,
+  trades,
+}: {
+  positions: PositionRow[];
+  trades: MarginRow[];
+}) {
+  const hasPositions = positions.length > 0;
+  const hasTrades = trades.length > 0;
+
+  if (!hasPositions && !hasTrades) {
+    return (
+      <div className="text-center py-10">
+        <p className="text-gray-500 text-sm">No Drift activity yet</p>
+        <p className="text-gray-600 text-[10px] mt-1 font-mono">
+          Leader's margin positions and trades will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {hasPositions && <PositionsSection positions={positions} />}
+      <DriftTradesTable trades={trades} />
+    </div>
+  );
+}
+
+function PositionsSection({ positions }: { positions: PositionRow[] }) {
+  return (
+    <div className="border-b border-border">
+      <div className="px-4 py-2 border-b border-border bg-purple-500/5 flex items-center gap-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-purple-300">
+          Open Positions ({positions.length})
+        </span>
+      </div>
+
+      {/* Mobile: compact rows */}
+      <div className="md:hidden divide-y divide-gray-800/50">
+        {positions.map((p) => {
+          const sym = MARKET_SYMBOL[p.marketIndex] ?? `MKT-${p.marketIndex}`;
+          const notional = p.baseAmount * p.entryPrice;
+          const lev = p.usdcCollateral > 0 ? notional / p.usdcCollateral : 0;
+          return (
+            <div
+              key={p.pda}
+              className="flex items-center justify-between text-[10px] px-2 py-1"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className={`font-bold ${
+                    p.direction === 'long' ? 'text-primary' : 'text-red-400'
+                  }`}
+                >
+                  {p.direction === 'long' ? 'L' : 'S'}
+                </span>
+                <span className="text-white font-mono">{sym}</span>
+                <span className="text-gray-500">{p.baseAmount.toFixed(4)}</span>
+                <span className="text-gray-600">@${p.entryPrice.toFixed(2)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-amber-300 font-mono">${p.usdcCollateral.toFixed(2)}</span>
+                <span className="text-gray-500">{lev.toFixed(1)}x</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop: dense table */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-[11px] font-mono">
+          <thead className="text-gray-500 border-b border-white/10 bg-black/40">
+            <tr className="text-[10px] uppercase tracking-widest">
+              <th className="text-left px-4 py-1.5 font-bold">Market</th>
+              <th className="text-left px-4 py-1.5 font-bold">Side</th>
+              <th className="text-right px-4 py-1.5 font-bold">Size</th>
+              <th className="text-right px-4 py-1.5 font-bold">Entry</th>
+              <th className="text-right px-4 py-1.5 font-bold">Notional</th>
+              <th className="text-right px-4 py-1.5 font-bold">Collateral</th>
+              <th className="text-right px-4 py-1.5 font-bold">Leverage</th>
+              <th className="text-right px-4 py-1.5 font-bold">Opened</th>
+            </tr>
+          </thead>
+          <tbody className="text-gray-400">
+            {positions.map((p) => {
+              const sym = MARKET_SYMBOL[p.marketIndex] ?? `MKT-${p.marketIndex}`;
+              const notional = p.baseAmount * p.entryPrice;
+              const lev = p.usdcCollateral > 0 ? notional / p.usdcCollateral : 0;
+              const sideColor =
+                p.direction === 'long' ? 'text-primary' : 'text-red-400';
+              return (
+                <tr
+                  key={p.pda}
+                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
+                >
+                  <td className="px-4 py-1.5 text-white font-bold">{sym}</td>
+                  <td className={`px-4 py-1.5 font-bold uppercase ${sideColor}`}>
+                    {p.direction}
+                  </td>
+                  <td className="px-4 py-1.5 text-right">{p.baseAmount.toFixed(4)}</td>
+                  <td className="px-4 py-1.5 text-right">
+                    {p.entryPrice > 0 ? `$${p.entryPrice.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-cyan-300">
+                    ${notional.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-amber-300">
+                    ${p.usdcCollateral.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-white">
+                    {lev > 0 ? `${lev.toFixed(2)}x` : '—'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                    {p.openedAt > 0 ? formatTime(p.openedAt) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Drift trades — leader's perp opens/closes via vault CPI
 // ────────────────────────────────────────────────────────────────────────────
 function DriftTradesTable({ trades }: { trades: MarginRow[] }) {
   if (trades.length === 0) {
     return (
-      <div className="text-center py-10">
-        <p className="text-gray-500 text-sm">No Drift trades yet</p>
-        <p className="text-gray-600 text-[10px] mt-1 font-mono">
-          Leader's margin trades will appear here once they open a position.
-        </p>
+      <div className="text-center py-6">
+        <p className="text-gray-500 text-xs font-mono">No trade history yet</p>
       </div>
     );
   }

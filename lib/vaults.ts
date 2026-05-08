@@ -2,6 +2,16 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import * as anchor from '@coral-xyz/anchor';
 import { CONFIG, PROGRAM_ID, PRECISION } from './contracts/config';
 import { getProgram } from './contracts/margin';
+import type { TokenPosition } from '@/types';
+
+// Drift perp market index → base symbol (subset of KNOWN_MARKETS in lib/drift/api.ts)
+const MARKET_BASE: Record<number, string> = {
+  0: 'SOL', 1: 'BTC', 2: 'ETH', 3: 'APT', 4: 'BONK', 5: 'MATIC', 6: 'ARB',
+  7: 'DOGE', 8: 'BNB', 9: 'SUI', 10: 'PEPE', 11: 'OP', 12: 'RNDR', 13: 'XRP',
+  14: 'HNT', 15: 'INJ', 16: 'LINK', 17: 'RLB', 18: 'PYTH', 19: 'TIA',
+  20: 'JTO', 21: 'SEI', 22: 'AVAX', 23: 'WIF', 24: 'JUP', 25: 'DYM',
+  26: 'TAO', 27: 'W', 28: 'KMNO', 29: 'TNSR',
+};
 
 export interface VaultLinks {
   website?: string;
@@ -26,6 +36,8 @@ export interface VaultInfo {
   sellPrice: string;
   tvl: string;
   isPaused: boolean;
+  createdAt: number; // unix seconds — using twap_last_updated as proxy (no createdAt on chain)
+  positions: TokenPosition[]; // open Drift perp positions for this vault
   // Hydrated from metadataUri JSON (populated by hydrateMetadata)
   imageUrl?: string;
   description?: string;
@@ -90,7 +102,42 @@ function parseVault(address: string, raw: any): VaultInfo {
     sellPrice:       sellPrice.toFixed(6),
     tvl:             tvlNum.toFixed(2),
     isPaused:        raw.isPaused ?? false,
+    createdAt:       Number(raw.twapLastUpdated?.toString?.() ?? 0),
+    positions:       [],
   };
+}
+
+/**
+ * Fetches every open MarginPosition account in one RPC call and groups them
+ * by their parent vault address. Used by loadVaults so the home-page TokenCard
+ * can show each vault's live Drift perp positions without N+1 fetches.
+ */
+async function loadOpenPositionsByVault(
+  program: anchor.Program,
+): Promise<Map<string, TokenPosition[]>> {
+  const out = new Map<string, TokenPosition[]>();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const accs: any[] = await (program.account as any).marginPosition.all();
+    for (const a of accs) {
+      const acc = a.account;
+      if (!acc?.isOpen) continue;
+      const vaultAddr = acc.vault.toBase58();
+      const baseAmount = Number(acc.baseAssetAmount?.toString?.() ?? 0) / 1e9;
+      const coin = MARKET_BASE[acc.marketIndex] ?? `MKT-${acc.marketIndex}`;
+      const pos: TokenPosition = {
+        coin,
+        size: baseAmount,
+        isLong: acc.direction !== 1, // 0=long, 1=short
+      };
+      const list = out.get(vaultAddr) ?? [];
+      list.push(pos);
+      out.set(vaultAddr, list);
+    }
+  } catch (e) {
+    console.error('[loadOpenPositionsByVault] failed:', e);
+  }
+  return out;
 }
 
 export async function loadVaults(
@@ -106,16 +153,21 @@ export async function loadVaults(
     );
     const program = getProgram(provider);
 
-    const accounts = await connection.getProgramAccounts(new PublicKey(PROGRAM_ID), {
-      filters: [{ memcmp: { offset: 0, bytes: anchor.utils.bytes.bs58.encode(VAULT_DISCRIMINATOR) } }],
-    });
+    const [accounts, positionsByVault] = await Promise.all([
+      connection.getProgramAccounts(new PublicKey(PROGRAM_ID), {
+        filters: [{ memcmp: { offset: 0, bytes: anchor.utils.bytes.bs58.encode(VAULT_DISCRIMINATOR) } }],
+      }),
+      loadOpenPositionsByVault(program),
+    ]);
 
     const vaults: VaultInfo[] = [];
     for (const { pubkey } of accounts) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const raw = await (program.account as any).vault.fetch(pubkey);
-        vaults.push(parseVault(pubkey.toBase58(), raw));
+        const v = parseVault(pubkey.toBase58(), raw);
+        v.positions = positionsByVault.get(v.address) ?? [];
+        vaults.push(v);
       } catch {
         // skip accounts that fail to deserialize
       }

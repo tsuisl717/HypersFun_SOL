@@ -70,7 +70,7 @@ export default function Home() {
       price: parseFloat(vault.buyPrice),
       holders: 0,
       creator: vault.leader,
-      createdAt: 0,
+      createdAt: vault.createdAt,
       volume24h: vault.totalVolume,
       priceChange24h: 0,
       priceChange: 0,
@@ -82,7 +82,7 @@ export default function Home() {
       leader: vault.leader,
       core: vault.address,
       metadataURI: vault.metadataUri,
-      positions: [],
+      positions: vault.positions ?? [],
       winRate: 0,
       apy: 0,
     }));

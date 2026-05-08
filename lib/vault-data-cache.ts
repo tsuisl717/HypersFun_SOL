@@ -62,6 +62,16 @@ export interface ReportMarginTrade {
   slot: number;
 }
 
+export interface ReportOpenPosition {
+  pda: string;
+  marketIndex: number;
+  direction: 'long' | 'short';
+  baseAmount: number;
+  usdcCollateral: number;
+  entryPrice: number;
+  openedAt: number;
+}
+
 export interface ReportData {
   vault: string;
   lastSync: number;
@@ -71,6 +81,7 @@ export interface ReportData {
   topHolders: ReportHolder[];
   recentTrades: ReportTrade[];
   marginTrades: ReportMarginTrade[];
+  openPositions: ReportOpenPosition[];
   navHistory: { time: number; value: number }[];
 }
 

@@ -126,10 +126,10 @@ const TokenCard: React.FC<TokenCardProps> = ({ token, viewMode = 'grid' }) => {
             </p>
           </div>
         </div>
-        {/* Row 3: L1 Positions */}
+        {/* Row 3: Drift Positions */}
         {token.positions && token.positions.length > 0 && (
           <div className="flex items-center gap-1 px-2 py-1 bg-black/50 border-t border-border/50 overflow-x-auto">
-            <span className="text-[8px] text-purple-400/60 font-bold uppercase shrink-0">L1:</span>
+            <span className="text-[8px] text-purple-400/60 font-bold uppercase shrink-0">Drift:</span>
             <div className="flex items-center gap-1">
               {token.positions.slice(0, 4).map((pos, idx) => (
                 <div
@@ -251,10 +251,10 @@ const TokenCard: React.FC<TokenCardProps> = ({ token, viewMode = 'grid' }) => {
             </div>
           </div>
 
-          {/* L1 Positions Row */}
+          {/* Drift Positions Row */}
           <div className="flex items-center gap-2 px-3 pb-2 border-t border-border/30 pt-2">
             <div className="text-[9px] text-purple-400/60 font-bold uppercase shrink-0">
-              <span className='mr-1'>L1</span>
+              <span className='mr-1'>Drift</span>
               <span>Positions:</span>
             </div>
             {token.positions && token.positions.length > 0 && (
@@ -380,10 +380,10 @@ const TokenCard: React.FC<TokenCardProps> = ({ token, viewMode = 'grid' }) => {
           </div>
         </div>
 
-        {/* L1 Positions */}
+        {/* Drift Positions */}
         <div className="mt-2 pt-2 border-t border-purple-500/20">
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[9px] text-purple-400/60 font-bold uppercase tracking-widest">L1 Positions</span>
+            <span className="text-[9px] text-purple-400/60 font-bold uppercase tracking-widest">Drift Positions</span>
           </div>
           {token.positions && token.positions.length > 0 && (
             <div className="flex flex-wrap gap-1">
