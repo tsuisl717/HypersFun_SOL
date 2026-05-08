@@ -26,6 +26,8 @@ interface TradeRow {
   tokens: number;
   price: number;
   navRaw: number;
+  exitFee: number;
+  perfFee: number;
   slot: number;
 }
 
@@ -188,64 +190,78 @@ function HistoryTable({ trades, symbol }: { trades: TradeRow[]; symbol: string }
         ))}
       </div>
 
-      {/* Desktop: HyperVapor-style dense table — TIME first, Buy/Sell color, monospace */}
+      {/* Desktop: HyperVapor-style dense table — Buy/Sell color, monospace */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-[11px] font-mono">
           <thead className="text-gray-500 border-b border-white/10 sticky top-0 bg-black z-10">
             <tr className="text-[10px] uppercase tracking-widest">
-              <th className="text-left px-4 py-2 font-bold">Time</th>
-              <th className="text-left px-4 py-2 font-bold">Side</th>
               <th className="text-left px-4 py-2 font-bold">User</th>
-              <th className="text-right px-4 py-2 font-bold">Price</th>
+              <th className="text-left px-4 py-2 font-bold">Type</th>
               <th className="text-right px-4 py-2 font-bold">USDC</th>
               <th className="text-right px-4 py-2 font-bold">{symbol || 'Tokens'}</th>
+              <th className="text-right px-4 py-2 font-bold">Price</th>
+              <th className="text-right px-4 py-2 font-bold">Exit Fee</th>
+              <th className="text-right px-4 py-2 font-bold">Time</th>
               <th className="text-center px-4 py-2 font-bold">Tx</th>
             </tr>
           </thead>
           <tbody className="text-gray-400">
-            {trades.map((t) => (
-              <tr
-                key={`${t.signature}:${t.side}`}
-                className="border-b border-white/5 hover:bg-white/5 transition-colors"
-              >
-                <td className="px-4 py-1.5 text-gray-500 whitespace-nowrap">
-                  {formatTime(t.timestamp, true)}
-                </td>
-                <td
-                  className={`px-4 py-1.5 font-bold capitalize ${
-                    t.side === 'buy' ? 'text-primary' : 'text-red-400'
-                  }`}
+            {trades.map((t) => {
+              const totalFee = t.exitFee + t.perfFee;
+              return (
+                <tr
+                  key={`${t.signature}:${t.side}`}
+                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
                 >
-                  {t.side}
-                </td>
-                <td className="px-4 py-1.5">
-                  <a
-                    href={getExplorerUrl('account', t.user)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-white hover:text-primary cursor-pointer"
+                  <td className="px-4 py-1.5">
+                    <a
+                      href={getExplorerUrl('account', t.user)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-white hover:text-primary cursor-pointer font-bold"
+                    >
+                      {shortAddr(t.user)}
+                    </a>
+                  </td>
+                  <td
+                    className={`px-4 py-1.5 font-bold uppercase ${
+                      t.side === 'buy' ? 'text-primary' : 'text-red-400'
+                    }`}
                   >
-                    {shortAddr(t.user)}
-                  </a>
-                </td>
-                <td className="px-4 py-1.5 text-right text-white font-bold">
-                  ${t.price.toFixed(4)}
-                </td>
-                <td className="px-4 py-1.5 text-right">${t.usdc.toFixed(2)}</td>
-                <td className="px-4 py-1.5 text-right">{t.tokens.toFixed(4)}</td>
-                <td className="px-4 py-1.5 text-center">
-                  <a
-                    href={getExplorerUrl('tx', t.signature)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-gray-500 hover:text-primary cursor-pointer inline-flex items-center"
-                    title={t.signature}
+                    {t.side}
+                  </td>
+                  <td className="px-4 py-1.5 text-right">${t.usdc.toFixed(2)}</td>
+                  <td className="px-4 py-1.5 text-right">{t.tokens.toFixed(4)}</td>
+                  <td className="px-4 py-1.5 text-right text-white font-bold">
+                    ${t.price.toFixed(6)}
+                  </td>
+                  <td
+                    className="px-4 py-1.5 text-right text-amber-400"
+                    title={
+                      t.side === 'sell'
+                        ? `exit ${t.exitFee.toFixed(4)} + perf ${t.perfFee.toFixed(4)} USDC`
+                        : undefined
+                    }
                   >
-                    <ExternalLink size={11} />
-                  </a>
-                </td>
-              </tr>
-            ))}
+                    {t.side === 'sell' && totalFee > 0 ? `$${totalFee.toFixed(4)}` : '-'}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-gray-500 whitespace-nowrap">
+                    {formatTime(t.timestamp)}
+                  </td>
+                  <td className="px-4 py-1.5 text-center">
+                    <a
+                      href={getExplorerUrl('tx', t.signature)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-500 hover:text-primary cursor-pointer inline-flex items-center"
+                      title={t.signature}
+                    >
+                      <ExternalLink size={11} />
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

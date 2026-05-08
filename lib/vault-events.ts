@@ -33,6 +33,8 @@ export interface VaultTrade {
   tokens: number;          // human vault tokens
   price: number;           // chart price = NAV at trade time (USDC per token)
   navRaw: number;          // same as price; kept for clarity
+  exitFee: number;         // human USDC — sell-only (0 for buy)
+  perfFee: number;         // human USDC — sell-only (0 for buy)
   slot: number;
 }
 
@@ -61,17 +63,24 @@ function eventToTrade(
   const nav = bnToNumber(d.nav) / 1e6;        // PRECISION = 1e6
   const user = d.user?.toBase58?.() ?? String(d.user ?? '');
 
-  if (ev.name === 'BuyEvent') {
+  // Anchor 0.30+ may normalize event names to camelCase ("buyEvent") while
+  // older IDL spec keeps the Rust PascalCase ("BuyEvent"). Compare case-
+  // insensitively so we accept both forms.
+  const name = ev.name.toLowerCase();
+
+  if (name === 'buyevent') {
     const usdc = bnToNumber(d.usdcIn ?? d.usdc_in) / 1e6;
     const tokens = bnToNumber(d.tokensOut ?? d.tokens_out) / 1e6;
     if (usdc <= 0 || tokens <= 0 || nav <= 0) return null;
-    return { signature: sig, side: 'buy', user, timestamp, usdc, tokens, price: nav, navRaw: nav, slot };
+    return { signature: sig, side: 'buy', user, timestamp, usdc, tokens, price: nav, navRaw: nav, exitFee: 0, perfFee: 0, slot };
   }
-  if (ev.name === 'SellEvent') {
+  if (name === 'sellevent') {
     const usdc = bnToNumber(d.usdcOut ?? d.usdc_out) / 1e6;
     const tokens = bnToNumber(d.tokensIn ?? d.tokens_in) / 1e6;
+    const exitFee = bnToNumber(d.exitFee ?? d.exit_fee) / 1e6;
+    const perfFee = bnToNumber(d.perfFee ?? d.perf_fee) / 1e6;
     if (usdc <= 0 || tokens <= 0 || nav <= 0) return null;
-    return { signature: sig, side: 'sell', user, timestamp, usdc, tokens, price: nav, navRaw: nav, slot };
+    return { signature: sig, side: 'sell', user, timestamp, usdc, tokens, price: nav, navRaw: nav, exitFee, perfFee, slot };
   }
   return null;
 }
@@ -168,13 +177,23 @@ export async function fetchVaultTrades(
 
       let foundOne = false;
       for (const ev of parser.parseLogs(logs, false)) {
-        if (ev.name !== 'BuyEvent' && ev.name !== 'SellEvent') continue;
+        const lower = ev.name.toLowerCase();
+        if (lower !== 'buyevent' && lower !== 'sellevent') {
+          dlog(`skip non-trade event: ${ev.name}`);
+          continue;
+        }
         const trade = eventToTrade(
           { name: ev.name, data: ev.data as Record<string, unknown> },
           sig,
           slot,
         );
-        if (trade) { trades.push(trade); totalEvents++; foundOne = true; }
+        if (trade) {
+          trades.push(trade);
+          totalEvents++;
+          foundOne = true;
+        } else {
+          dlog(`event ${ev.name} failed to decode for sig ${sig.slice(0, 8)}…`);
+        }
       }
       if (foundOne) txWithEvents++;
     }
