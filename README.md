@@ -2,7 +2,7 @@
  
 > **TL;DR** — HypersFun lets anyone launch a tokenized, NAV-anchored hedge fund in one click. Investors buy SPL fund tokens via a virtual AMM; the manager actively trades perpetuals on Drift Protocol; PnL flows transparently into NAV. This Solana implementation extends our [production HyperEVM deployment](https://hypers.fun) with native Drift integration, sub-second NAV updates, and Solana-DeFi composability.
  
-[Live Devnet](https://sol.hypers.fun) · [Hyperliquid Mainnet](https://hypers.fun) · [Protocol Docs](https://hyper-fun.gitbook.io/hypers.fun) · [@hypersFun](https://x.com/hypersFun)
+[Live Devnet](https://sol.hypers.fun) · [Hyperliquid Mainnet](https://hypers.fun) · [Protocol Docs](https://hyper-fun.gitbook.io/hyper.fun) · [@hypersFun](https://x.com/hypersFun)
  
 ---
  
