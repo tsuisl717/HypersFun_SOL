@@ -3,8 +3,14 @@
 /**
  * DriftChart — candlestick chart for a Drift perp market.
  *
- * Data source: GET https://data.api.drift.trade/market/{symbol}/candles/{resolution}
- * Devnet has no Data API → shows a placeholder.
+ * Data source priority (handled by `fetchDriftCandles`):
+ *   1. Drift Data API (mainnet only — devnet has no public API)
+ *   2. Binance Futures klines (fallback / devnet primary). Most Drift
+ *      perps map 1:1 to Binance USDT pairs and the AMM is oracle-anchored,
+ *      so the chart shape matches closely.
+ *
+ * The active source is shown as a small tag in the toolbar so users know
+ * what they're looking at.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,9 +24,13 @@ import {
 } from 'lightweight-charts';
 import { Loader2, RefreshCw, TrendingUp } from 'lucide-react';
 
-import { fetchDriftCandles, type DriftResolution } from '@/lib/drift/api';
+import {
+  fetchDriftCandles,
+  driftSymbolToBinance,
+  type DriftResolution,
+  type CandlesSource,
+} from '@/lib/drift/api';
 import type { OHLCV } from '@/lib/indicators';
-import { NETWORK } from '@/lib/contracts/config';
 
 interface Props {
   symbol: string;
@@ -41,11 +51,11 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
 
   const [resolution, setResolution] = useState<DriftResolution>('60');
   const [candles, setCandles] = useState<OHLCV[]>([]);
+  const [source, setSource] = useState<CandlesSource>('none');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const inFlightRef = useRef(false);
-  const isDevnet = NETWORK === 'devnet';
 
   // ─── Load candles ─────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -54,10 +64,11 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchDriftCandles(symbol, resolution, 300);
-      setCandles(data);
-      if (data.length === 0 && !isDevnet) {
-        setError('No candles returned.');
+      const result = await fetchDriftCandles(symbol, resolution, 300);
+      setCandles(result.candles);
+      setSource(result.source);
+      if (result.candles.length === 0) {
+        setError('No candle data available for this market.');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message.slice(0, 140) : 'load failed');
@@ -65,7 +76,7 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [symbol, resolution, isDevnet]);
+  }, [symbol, resolution]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -161,6 +172,22 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
             </span>
           </>
         )}
+        {source !== 'none' && (
+          <span
+            className={`text-[9px] font-mono font-bold uppercase tracking-widest px-1.5 py-0.5 border ${
+              source === 'drift'
+                ? 'text-purple-300 border-purple-400/40 bg-purple-500/10'
+                : 'text-yellow-300 border-yellow-400/40 bg-yellow-500/10'
+            }`}
+            title={
+              source === 'drift'
+                ? 'Source: Drift Data API'
+                : `Source: Binance ${driftSymbolToBinance(symbol) ?? ''} (proxy)`
+            }
+          >
+            {source === 'drift' ? 'Drift' : 'Binance'}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {RESOLUTIONS.map(r => (
             <button
@@ -197,7 +224,8 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
           </div>
         )}
 
-        {/* Empty / devnet placeholder */}
+        {/* Empty placeholder — only shown when both Drift API and Binance
+            return nothing (e.g. exotic perps with no CEX equivalent). */}
         {!loading && candles.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
             <TrendingUp size={32} className="text-purple-400/40 mb-2" />
@@ -205,9 +233,8 @@ export default function DriftChart({ symbol, height = 280 }: Props) {
               No chart data
             </div>
             <div className="text-[11px] text-gray-500 font-mono leading-relaxed max-w-xs">
-              {isDevnet
-                ? 'Drift devnet (vELoC1) does not publish candle history. Switch to mainnet to see live charts.'
-                : error ?? `Drift Data API returned no candles for ${symbol}.`}
+              {error ??
+                `No candle history found for ${symbol}. Drift Data API and Binance both came back empty.`}
             </div>
           </div>
         )}

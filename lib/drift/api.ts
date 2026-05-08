@@ -99,14 +99,54 @@ export async function fetchDriftMarkets(): Promise<DriftMarket[]> {
 }
 
 // ─── Public: fetch candles ──────────────────────────────────────────────────
+export type CandlesSource = 'drift' | 'binance' | 'none';
+
+export interface CandlesResult {
+  candles: OHLCV[];
+  source: CandlesSource;
+}
+
+/**
+ * Fetch candles for a Drift perp.
+ *
+ * Strategy:
+ *   • Mainnet: try Drift Data API first → fall back to Binance Futures
+ *     (drift fills closely track CEX since the AMM is oracle-anchored).
+ *   • Devnet (vELoC1 fork): no Data API exists — go straight to Binance
+ *     so users still see real chart history while testing.
+ *
+ * Symbol mapping is defined in `driftSymbolToBinance`. Markets without a
+ * Binance equivalent return `{ candles: [], source: 'none' }`.
+ */
 export async function fetchDriftCandles(
   symbol: string,
   resolution: DriftResolution = '60',
   limit = 200,
+): Promise<CandlesResult> {
+  // Mainnet: try the official API first.
+  if (NETWORK === 'mainnet-beta') {
+    const driftCandles = await fetchDriftApiCandles(symbol, resolution, limit);
+    if (driftCandles.length > 0) {
+      return { candles: driftCandles, source: 'drift' };
+    }
+  }
+
+  // Devnet, or Drift API empty/failed → Binance.
+  const binanceCandles = await fetchBinanceCandles(symbol, resolution, limit);
+  if (binanceCandles.length > 0) {
+    return { candles: binanceCandles, source: 'binance' };
+  }
+
+  return { candles: [], source: 'none' };
+}
+
+async function fetchDriftApiCandles(
+  symbol: string,
+  resolution: DriftResolution,
+  limit: number,
 ): Promise<OHLCV[]> {
   const endTs = Math.floor(Date.now() / 1000);
   const startTs = endTs - limit * resolutionToSeconds(resolution);
-
   try {
     const res = await fetch(
       `${DRIFT_API_BASE}/market/${symbol}/candles/${resolution}` +
@@ -114,12 +154,93 @@ export async function fetchDriftCandles(
       { cache: 'no-store' },
     );
     if (!res.ok) return [];
-    const data = await res.json();
-    return parseCandles(data);
+    return parseCandles(await res.json());
   } catch (e) {
     console.warn(`[drift] candles fetch failed for ${symbol}:`, e);
     return [];
   }
+}
+
+// ─── Binance fallback ───────────────────────────────────────────────────────
+const BINANCE_FAPI_BASE = 'https://fapi.binance.com';
+const BINANCE_SAPI_BASE = 'https://api.binance.com';
+
+/**
+ * Map a Drift perp symbol to the equivalent Binance USDT pair.
+ * Drift's `1MBASE-PERP` markets bundle 1,000,000 units; Binance typically
+ * exposes the same idea as `1000BASE-USDT` (1,000 units), so prices differ
+ * by 1000×. We keep the price as-is — chart shape is what matters; the
+ * absolute level is calibrated against the on-chain oracle anyway.
+ */
+export function driftSymbolToBinance(symbol: string): string | null {
+  const base = symbol.replace(/-PERP$/i, '').toUpperCase();
+  if (!base) return null;
+
+  // Markets with a 1M (= one million) prefix → Binance's 1000-prefix pair.
+  if (base.startsWith('1M')) {
+    const inner = base.slice(2);
+    if (!inner) return null;
+    return `1000${inner}USDT`;
+  }
+  return `${base}USDT`;
+}
+
+const BINANCE_INTERVAL: Record<DriftResolution, string> = {
+  '1':   '1m',
+  '5':   '5m',
+  '15':  '15m',
+  '60':  '1h',
+  '240': '4h',
+  'D':   '1d',
+  'W':   '1w',
+};
+
+export async function fetchBinanceCandles(
+  driftSymbol: string,
+  resolution: DriftResolution,
+  limit: number,
+): Promise<OHLCV[]> {
+  const binanceSymbol = driftSymbolToBinance(driftSymbol);
+  if (!binanceSymbol) return [];
+  const interval = BINANCE_INTERVAL[resolution];
+  const cappedLimit = Math.min(Math.max(limit, 1), 1500);
+
+  // Try Binance Futures (USDT-M perpetuals) first, then Spot as fallback —
+  // some perps (e.g. WIF) didn't ship on Spot until later.
+  for (const base of [BINANCE_FAPI_BASE, BINANCE_SAPI_BASE]) {
+    const path = base === BINANCE_FAPI_BASE ? '/fapi/v1/klines' : '/api/v3/klines';
+    try {
+      const res = await fetch(
+        `${base}${path}?symbol=${binanceSymbol}&interval=${interval}&limit=${cappedLimit}`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) continue;
+      const raw = await res.json();
+      const parsed = parseBinanceKlines(raw);
+      if (parsed.length > 0) return parsed;
+    } catch (e) {
+      console.warn(`[binance] klines fetch failed for ${binanceSymbol}:`, e);
+    }
+  }
+  return [];
+}
+
+function parseBinanceKlines(raw: unknown): OHLCV[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OHLCV[] = [];
+  for (const row of raw) {
+    if (!Array.isArray(row) || row.length < 6) continue;
+    // [openTime(ms), open, high, low, close, volume, closeTime, ...]
+    const time = Math.floor(Number(row[0]) / 1000);
+    const open = Number(row[1]);
+    const high = Number(row[2]);
+    const low = Number(row[3]);
+    const close = Number(row[4]);
+    const volume = Number(row[5]);
+    if (!Number.isFinite(time) || !Number.isFinite(open)) continue;
+    out.push({ time, open, high, low, close, volume });
+  }
+  return out.sort((a, b) => a.time - b.time);
 }
 
 // ─── On-chain PerpMarket lookup ─────────────────────────────────────────────
