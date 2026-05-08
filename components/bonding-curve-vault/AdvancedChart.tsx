@@ -13,7 +13,7 @@
  * dedupes work across all tabs with its server-side cache.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createChart,
   IChartApi,
@@ -33,6 +33,7 @@ import {
   calculateBollingerBands,
   type OHLCV,
 } from '@/lib/indicators';
+import { useCandles } from '@/lib/vault-data-cache';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type Interval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
@@ -42,14 +43,6 @@ interface AdvancedChartProps {
   vaultAddress: string;
   tokenSymbol?: string;
   currentPrice?: number;       // current spot price — used to extend live candle
-}
-
-interface CandlesResponse {
-  vault: string;
-  interval: Interval;
-  tradeCount: number;
-  candles: OHLCV[];
-  lastSync: number;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -94,49 +87,13 @@ export default function AdvancedChart({
     bb: false,
   });
 
-  const [serverCandles, setServerCandles] = useState<OHLCV[]>([]);
-  const [tradeCount, setTradeCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  const inFlightRef = useRef(false);
-
-  // ─── Fetch candles from API ────────────────────────────────────────────
-  const loadCandles = useCallback(async () => {
-    if (!vaultAddress) return;
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    setSyncing(true);
-    setSyncError(null);
-    try {
-      const res = await fetch(
-        `/api/vault/candles?vault=${vaultAddress}&interval=${interval}&limit=300`,
-        { cache: 'no-store' },
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as CandlesResponse;
-      setServerCandles(data.candles);
-      setTradeCount(data.tradeCount);
-      console.log(
-        `[AdvancedChart] candles [${interval}] ${data.candles.length} candles · ${data.tradeCount} trades`,
-        data.candles,
-      );
-    } catch (e) {
-      console.error('[AdvancedChart] load error:', e);
-      setSyncError(e instanceof Error ? e.message.slice(0, 140) : 'load failed');
-    } finally {
-      setLoading(false);
-      setSyncing(false);
-      inFlightRef.current = false;
-    }
-  }, [vaultAddress, interval]);
-
-  // refetch when vault or interval changes
-  useEffect(() => { loadCandles(); }, [loadCandles]);
+  const candlesResult = useCandles(vaultAddress, interval, 300);
+  const serverCandles = candlesResult.data?.candles ?? [];
+  const tradeCount = candlesResult.data?.tradeCount ?? 0;
+  const loading = candlesResult.loading;
+  const syncing = candlesResult.syncing;
+  const syncError = candlesResult.error;
+  const loadCandles = candlesResult.refresh;
 
   // ─── Append a "live bucket" candle from currentPrice ───────────────────
   const candles = useMemo<OHLCV[]>(() => {

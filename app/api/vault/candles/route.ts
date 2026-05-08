@@ -47,7 +47,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const entry = await ensureFreshTrades(vaultPk.toBase58());
+    const force = url.searchParams.get('force') === '1';
+    const entry = await ensureFreshTrades(vaultPk.toBase58(), { force });
     const intervalSecs = intervalToSeconds(intervalParam);
     const allCandles = buildCandlesFromTrades(entry.trades, intervalSecs);
     const candles = allCandles.slice(-limit);

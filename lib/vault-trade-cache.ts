@@ -63,12 +63,20 @@ export function getServerConnection(): Connection {
  * Returns a fresh-enough cache entry for `vaultStr`. Multiple concurrent
  * callers share the same in-flight sync (`entry.syncing`). After success
  * the entry is updated with the merged trades and a new `lastSync`.
+ *
+ * `opts.force = true` skips the TTL check and forces an incremental sync
+ * (still uses `latestSig` cursor — only new sigs are fetched). Used by the
+ * client cache after a successful buy/sell to surface the new trade
+ * without waiting for the 2-minute TTL to expire.
  */
-export async function ensureFreshTrades(vaultStr: string): Promise<VaultCacheEntry> {
+export async function ensureFreshTrades(
+  vaultStr: string,
+  opts: { force?: boolean } = {},
+): Promise<VaultCacheEntry> {
   let entry = tradeCache.get(vaultStr);
   const now = Date.now();
 
-  if (entry && now - entry.lastSync < SYNC_TTL_MS && !entry.syncing) {
+  if (entry && !opts.force && now - entry.lastSync < SYNC_TTL_MS && !entry.syncing) {
     return entry;
   }
 

@@ -241,8 +241,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'invalid vault pubkey' }, { status: 400 });
     }
 
+    const force = url.searchParams.get('force') === '1';
+
     // 1. Trade cache (shared with /candles)
-    const entry = await ensureFreshTrades(vaultPk.toBase58());
+    const entry = await ensureFreshTrades(vaultPk.toBase58(), { force });
     const summary = summarise(entry.trades);
     const navHistory = buildNavHistory(entry.trades, 120);
     const recentTrades = entry.trades.slice(-50).reverse(); // newest first

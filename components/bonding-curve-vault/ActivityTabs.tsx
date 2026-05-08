@@ -7,48 +7,20 @@
  * table for History (vault buy/sell trades) and Holders. Drops the L1
  * Trades sub-tab since there's no Hyperliquid on Solana.
  *
- * Data source: /api/vault/report — same server-side cache used by
- * ReportPanel, so opening the report tab and the trading tab won't
- * trigger duplicate RPC scans.
+ * Data source: shared client-side SWR cache (lib/vault-data-cache.ts) —
+ * cache is keyed by vault address and shared with SimulationPanel, so
+ * switching tabs doesn't refetch. After a trade, page.tsx calls
+ * invalidateVault() which force-refreshes the server cache too.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Loader2, ExternalLink } from 'lucide-react';
 import { getExplorerUrl } from '@/lib/contracts/config';
-
-// ─── Types (mirror /api/vault/report response) ─────────────────────────────
-interface TradeRow {
-  signature: string;
-  side: 'buy' | 'sell';
-  user: string;
-  timestamp: number;
-  usdc: number;
-  tokens: number;
-  price: number;
-  navRaw: number;
-  exitFee: number;
-  perfFee: number;
-  slot: number;
-}
-
-interface HolderRow {
-  owner: string;
-  balance: number;
-  percent: number;
-}
-
-interface ReportData {
-  vault: string;
-  lastSync: number;
-  meta: { symbol: string; name: string; tokenMint: string; decimals: number } | null;
-  summary: {
-    totalTrades: number;
-    uniqueHolders: number;
-    [k: string]: unknown;
-  };
-  topHolders: HolderRow[];
-  recentTrades: TradeRow[];
-}
+import {
+  useReport,
+  type ReportTrade as TradeRow,
+  type ReportHolder as HolderRow,
+} from '@/lib/vault-data-cache';
 
 type Tab = 'history' | 'holders';
 
@@ -61,31 +33,7 @@ export default function ActivityTabs({
   leaderAddress?: string;
 }) {
   const [tab, setTab] = useState<Tab>('history');
-  const [data, setData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/vault/report?vault=${vaultAddress}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      setData((await res.json()) as ReportData);
-    } catch (e) {
-      console.error('[ActivityTabs] load error:', e);
-      setError(e instanceof Error ? e.message : 'load failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [vaultAddress]);
-
-  useEffect(() => { load(); }, [load]);
+  const { data, loading, syncing, error, refresh } = useReport(vaultAddress);
 
   const symbol = data?.meta?.symbol ?? '';
   const trades = data?.recentTrades ?? [];
@@ -107,14 +55,14 @@ export default function ActivityTabs({
           Holders ({holderCount})
         </TabButton>
         <div className="ml-auto flex items-center gap-2">
-          {loading && (
+          {syncing && (
             <span className="text-[10px] text-gray-500 flex items-center gap-1">
               <Loader2 size={10} className="animate-spin" /> syncing
             </span>
           )}
           {error && (
             <button
-              onClick={load}
+              onClick={refresh}
               className="text-[10px] text-red-400 hover:text-red-300"
               title={error}
             >

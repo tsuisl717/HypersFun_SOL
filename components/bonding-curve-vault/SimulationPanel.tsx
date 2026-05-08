@@ -25,7 +25,7 @@
  * Simulation mode is a placeholder; wire to the program's BC math later.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   AreaChart,
   Area,
@@ -39,6 +39,7 @@ import {
 } from 'recharts';
 import { Loader2, Download, ExternalLink } from 'lucide-react';
 import { getExplorerUrl } from '@/lib/contracts/config';
+import { useReport } from '@/lib/vault-data-cache';
 
 // ─── API response (matches /api/vault/report) ──────────────────────────────
 interface TradeRow {
@@ -168,36 +169,13 @@ export default function SimulationPanel({
   const [chartRange, setChartRange] = useState<ChartRange>('30D');
   const [chartType, setChartType] = useState<ChartType>('pnl');
 
-  const [data, setData] = useState<ReportData | null>(externalData ?? null);
-  const [loading, setLoading] = useState(!externalData);
-  const [error, setError] = useState<string | null>(null);
-
-  // ─── Fetch report data (only if not provided externally) ───────────────
-  const load = useCallback(async () => {
-    if (externalData) {
-      setData(externalData);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/vault/report?vault=${vaultAddress}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      setData((await res.json()) as ReportData);
-    } catch (e) {
-      console.error('[SimulationPanel] load error:', e);
-      setError(e instanceof Error ? e.message : 'load failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [vaultAddress, externalData]);
-
-  useEffect(() => { load(); }, [load]);
+  // Subscribe to the shared report cache (no-op fetch when externalData
+  // is provided — we still subscribe so cache stays warm for tab toggles).
+  const hookResult = useReport(externalData ? null : vaultAddress);
+  const data: ReportData | null = (externalData ?? hookResult.data) as ReportData | null;
+  const loading = !externalData && hookResult.loading;
+  const error = externalData ? null : hookResult.error;
+  const load = hookResult.refresh;
 
   // ─── Derived: detailed per-trade results ──────────────────────────────
   const detailedResults = useMemo<DetailedRow[]>(() => {

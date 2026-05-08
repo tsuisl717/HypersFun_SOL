@@ -41,6 +41,7 @@ import {
   getUserSharePda,
 } from '@/lib/contracts/margin';
 import { parseMetadata, type VaultLinks } from '@/lib/vaults';
+import { invalidateVault } from '@/lib/vault-data-cache';
 
 // ─── Dynamic / lazy components ──────────────────────────────────────────────
 const AdvancedChart = dynamic(
@@ -363,6 +364,9 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
         sig,
       });
       setAmount('');
+      // Force history / chart / holders to pick up the new trade without
+      // waiting for the 2-minute server cache TTL.
+      invalidateVault(vault.address);
       await Promise.all([loadVault(), loadUserBalances()]);
     } catch (e: unknown) {
       const err = e as { message?: string; logs?: string[] };
@@ -483,7 +487,11 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
           Report
         </TabButton>
         <button
-          onClick={() => { loadVault(); loadUserBalances(); }}
+          onClick={() => {
+            invalidateVault(vault.address);
+            loadVault();
+            loadUserBalances();
+          }}
           className="ml-auto px-3 text-gray-400 hover:text-primary cursor-pointer flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"
           title="Refresh"
         >
