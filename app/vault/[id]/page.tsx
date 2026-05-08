@@ -41,7 +41,7 @@ import {
   getUserSharePda,
 } from '@/lib/contracts/margin';
 import { parseMetadata, type VaultLinks } from '@/lib/vaults';
-import { invalidateVault } from '@/lib/vault-data-cache';
+import { invalidateVault, useReport } from '@/lib/vault-data-cache';
 
 // ─── Dynamic / lazy components ──────────────────────────────────────────────
 const AdvancedChart = dynamic(
@@ -72,6 +72,10 @@ const SimulationPanel = dynamic(
 );
 const ActivityTabs = dynamic(
   () => import('@/components/bonding-curve-vault/ActivityTabs'),
+  { ssr: false },
+);
+const PositionsChartPanel = dynamic(
+  () => import('@/components/bonding-curve-vault/PositionsChartPanel'),
   { ssr: false },
 );
 
@@ -157,6 +161,11 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
   const [adminBusy, setAdminBusy] = useState(false);
 
   const isLeader = !!publicKey && !!vault && publicKey.toBase58() === vault.leader;
+
+  // Subscribe to the shared report cache so we know about open Drift
+  // positions (used to show the L1 PERP mini-chart panel beside the main
+  // chart). Same cache as ActivityTabs / SimulationPanel — no extra fetch.
+  const { data: report } = useReport(vaultAddress);
 
   // ─── Provider helper ──────────────────────────────────────────────────
   const getProvider = useCallback((): anchor.AnchorProvider => {
@@ -503,14 +512,21 @@ export default function VaultPage({ params }: { params: Promise<{ id: string }> 
       <main className="flex-1 flex flex-col">
         {activeTab === 'trading' && (
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-[1fr_460px] gap-px bg-border">
-            {/* Left column: chart + activity tabs */}
+            {/* Left column: chart row (mini-charts + main chart) + activity tabs */}
             <div className="flex flex-col min-w-0">
-              <div className="bg-[#131722] h-[500px] lg:h-[560px]">
-                <AdvancedChart
-                  vaultAddress={vault.address}
-                  tokenSymbol={vault.symbol || '???'}
-                  currentPrice={buyPrice}
-                />
+              <div className="h-[500px] lg:h-[560px] flex bg-border">
+                {(report?.openPositions?.length ?? 0) > 0 && (
+                  <div className="hidden lg:block w-[460px] xl:w-[540px] 2xl:w-[620px] shrink-0">
+                    <PositionsChartPanel positions={report!.openPositions} />
+                  </div>
+                )}
+                <div className="flex-1 bg-[#131722] min-w-0">
+                  <AdvancedChart
+                    vaultAddress={vault.address}
+                    tokenSymbol={vault.symbol || '???'}
+                    currentPrice={buyPrice}
+                  />
+                </div>
               </div>
               <ActivityTabs
                 vaultAddress={vault.address}

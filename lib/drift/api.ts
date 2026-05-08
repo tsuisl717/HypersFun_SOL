@@ -64,6 +64,11 @@ const KNOWN_MARKETS: Omit<DriftMarket, 'isTradeable'>[] = [
   { marketIndex: 29, symbol: 'TNSR-PERP',  baseSymbol: 'TNSR'  },
 ];
 
+/** Resolve a Drift perp market index to its canonical symbol (e.g. 0 → "SOL-PERP"). */
+export function getMarketSymbol(marketIndex: number): string {
+  return KNOWN_MARKETS.find((m) => m.marketIndex === marketIndex)?.symbol ?? `MKT-${marketIndex}`;
+}
+
 /**
  * `isTradeable` is set to `true` for every market in the curated list — the
  * vault program forwards `market_index` + caller-provided `perp_market` /

@@ -17,6 +17,7 @@
 import { useState } from 'react';
 import { Loader2, ExternalLink } from 'lucide-react';
 import { getExplorerUrl } from '@/lib/contracts/config';
+import { getMarketSymbol } from '@/lib/drift/api';
 import {
   useReport,
   type ReportTrade as TradeRow,
@@ -24,18 +25,6 @@ import {
   type ReportMarginTrade as MarginRow,
   type ReportOpenPosition as PositionRow,
 } from '@/lib/vault-data-cache';
-
-// Drift perp market index → symbol (mirrors KNOWN_MARKETS in lib/drift/api.ts)
-const MARKET_SYMBOL: Record<number, string> = {
-  0: 'SOL-PERP', 1: 'BTC-PERP', 2: 'ETH-PERP', 3: 'APT-PERP',
-  4: '1MBONK-PERP', 5: 'MATIC-PERP', 6: 'ARB-PERP', 7: 'DOGE-PERP',
-  8: 'BNB-PERP', 9: 'SUI-PERP', 10: '1MPEPE-PERP', 11: 'OP-PERP',
-  12: 'RNDR-PERP', 13: 'XRP-PERP', 14: 'HNT-PERP', 15: 'INJ-PERP',
-  16: 'LINK-PERP', 17: 'RLB-PERP', 18: 'PYTH-PERP', 19: 'TIA-PERP',
-  20: 'JTO-PERP', 21: 'SEI-PERP', 22: 'AVAX-PERP', 23: 'WIF-PERP',
-  24: 'JUP-PERP', 25: 'DYM-PERP', 26: 'TAO-PERP', 27: 'W-PERP',
-  28: 'KMNO-PERP', 29: 'TNSR-PERP',
-};
 
 type Tab = 'history' | 'holders' | 'drift';
 
@@ -412,7 +401,7 @@ function PositionsSection({ positions }: { positions: PositionRow[] }) {
       {/* Mobile: compact rows */}
       <div className="md:hidden divide-y divide-gray-800/50">
         {positions.map((p) => {
-          const sym = MARKET_SYMBOL[p.marketIndex] ?? `MKT-${p.marketIndex}`;
+          const sym = getMarketSymbol(p.marketIndex);
           const notional = p.baseAmount * p.entryPrice;
           const lev = p.usdcCollateral > 0 ? notional / p.usdcCollateral : 0;
           return (
@@ -458,7 +447,7 @@ function PositionsSection({ positions }: { positions: PositionRow[] }) {
           </thead>
           <tbody className="text-gray-400">
             {positions.map((p) => {
-              const sym = MARKET_SYMBOL[p.marketIndex] ?? `MKT-${p.marketIndex}`;
+              const sym = getMarketSymbol(p.marketIndex);
               const notional = p.baseAmount * p.entryPrice;
               const lev = p.usdcCollateral > 0 ? notional / p.usdcCollateral : 0;
               const sideColor =
@@ -515,7 +504,7 @@ function DriftTradesTable({ trades }: { trades: MarginRow[] }) {
       {/* Mobile: compact rows */}
       <div className="md:hidden divide-y divide-gray-800/50">
         {trades.map((t) => {
-          const sym = MARKET_SYMBOL[t.marketIndex] ?? `MKT-${t.marketIndex}`;
+          const sym = getMarketSymbol(t.marketIndex);
           const isOpen = t.side === 'open';
           return (
             <div
@@ -576,7 +565,7 @@ function DriftTradesTable({ trades }: { trades: MarginRow[] }) {
           </thead>
           <tbody className="text-gray-400">
             {trades.map((t) => {
-              const sym = MARKET_SYMBOL[t.marketIndex] ?? `MKT-${t.marketIndex}`;
+              const sym = getMarketSymbol(t.marketIndex);
               const isOpen = t.side === 'open';
               const sideLabel = isOpen
                 ? (t.direction === 'long' ? 'Long' : 'Short')
