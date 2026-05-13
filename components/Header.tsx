@@ -68,7 +68,7 @@ export default function Header({ searchQuery, onSearchChange, onLogoClick }: Hea
   const handleNavClick = (link: typeof navLinks[number]) => {
     if (link === 'VAULTS') router.push('/');
     else if (link === 'FAUCET') router.push('/faucet');
-    else if (link === 'DOCS') window.open('https://api.hypers.fun/', '_blank');
+    else if (link === 'DOCS') window.open('https://hyper-fun.gitbook.io/hypers.fun/', '_blank');
     else if (link === 'PROFILE') router.push('/profile');
     setShowMobileMenu(false);
   };
